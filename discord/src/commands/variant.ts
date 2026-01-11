@@ -187,7 +187,8 @@ export async function handleVariantCommand({
   }
 
   // Parse provider and model from full model ID (format: provider_id/model_id)
-  const [providerId, modelId] = currentModel.split('/')
+  const [providerId, ...modelParts] = currentModel.split('/')
+  const modelId = modelParts.join('/')
   if (!providerId || !modelId) {
     await interaction.editReply({
       content: `Invalid model format: ${currentModel}. Run \`/model\` to set a valid model.`,

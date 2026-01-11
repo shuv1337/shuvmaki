@@ -28,3 +28,19 @@
 - **Feedback**:
   - Typecheck: Pre-existing vitest errors only (no new issues)
   - No code changes needed - verification task only
+
+## Iteration 3 - 2026-01-11
+- **Migrated**: `session.prompt` and `session.command` from **v1 to v2** client
+- **File**: `discord/src/session-handler.ts:788-808`
+- **Changes**:
+  - Replaced `getClient().session.command` with `clientV2.session.command`
+  - Replaced `getClient().session.prompt` with `clientV2.session.prompt`
+  - Changed from `path: { id: ... }, body: { ... }` to flat params style
+  - Added `directory` parameter required by v2 API
+  - Signal moved to second options argument
+- **Why**: Core migration enabling **variant support** - v2 API accepts `variant?: string` param
+- **Verified SDK types**: `variant` field available in both session.prompt and session.command
+- **Feedback**:
+  - Typecheck: Pre-existing vitest errors only (no new issues from migration)
+  - Tests: Pre-existing snapshot mismatches (unrelated)
+  - Lint: No lint script available

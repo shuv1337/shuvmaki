@@ -38,68 +38,116 @@
   {
     "category": "functional",
     "description": "Confirm v2 `session.prompt` accepts `variant?: string` field",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Read SDK type at node_modules/@opencode-ai/sdk/dist/v2/gen/sdk.gen.d.ts:408-424",
+      "session.prompt accepts: sessionID, directory?, variant?, parts?, model?, agent?, system?, etc."
+    ],
+    "passes": true,
+    "notes": "Confirmed in SDK types - variant?: string is supported in session.prompt parameters"
   },
   {
     "category": "functional",
     "description": "Confirm v2 `session.command` accepts `variant?: string` field",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Read SDK type at node_modules/@opencode-ai/sdk/dist/v2/gen/sdk.gen.d.ts:462-479",
+      "session.command accepts: sessionID, directory?, variant?, command?, arguments?, agent?, etc."
+    ],
+    "passes": true,
+    "notes": "Confirmed in SDK types - variant?: string is supported in session.command parameters"
   },
   {
     "category": "functional",
     "description": "Note path parameter difference: v2 uses `sessionID`, v1 uses `id`",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "v1 style: getClient().session.prompt({ path: { id: ... }, body: { ... } })",
+      "v2 style: clientV2.session.prompt({ sessionID: ..., ... }, { signal: ... })",
+      "v2 uses flat parameters object, options object for signal/config"
+    ],
+    "passes": true,
+    "notes": "Key migration difference documented - v2 uses flat sessionID parameter instead of nested path object"
   },
   {
     "category": "functional",
     "description": "Import `getOpencodeClientV2` in `discord/src/session-handler.ts`",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Verified import at session-handler.ts:10",
+      "Import: { initializeOpencodeForDirectory, getOpencodeServers, getOpencodeClientV2 } from './opencode.js'"
+    ],
+    "passes": true,
+    "notes": "Import was already present"
   },
   {
     "category": "functional",
     "description": "Locate the `getClient().session.prompt` call in session-handler.ts",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Found at line 686 (before migration)",
+      "Was inside ternary for command vs prompt"
+    ],
+    "passes": true,
+    "notes": "Located in processThreadRequest function"
   },
   {
     "category": "functional",
     "description": "Replace v1 `session.prompt` with v2 client call using `sessionID` path param",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Replaced getClient().session.prompt with clientV2.session.prompt",
+      "Changed from path: { id: session.id } to sessionID: session.id",
+      "Added directory parameter for v2 API"
+    ],
+    "passes": true,
+    "notes": "Migration complete at session-handler.ts:798"
   },
   {
     "category": "functional",
     "description": "Update prompt call to use flat parameter style instead of `path: { id: ... }`",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Changed from { path: { id }, body: { parts, system, model, agent }, signal } to",
+      "{ sessionID, directory, parts, system, model, agent }, { signal }"
+    ],
+    "passes": true,
+    "notes": "v2 uses flat params in first arg, options (signal) in second arg"
   },
   {
     "category": "functional",
     "description": "Locate the `getClient().session.command` call in session-handler.ts",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Found at line 677 (before migration)",
+      "Was first branch of ternary for command vs prompt"
+    ],
+    "passes": true,
+    "notes": "Located in processThreadRequest function"
   },
   {
     "category": "functional",
     "description": "Replace v1 `session.command` with v2 client call using `sessionID` path param",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Replaced getClient().session.command with clientV2.session.command",
+      "Changed from path: { id: session.id } to sessionID: session.id",
+      "Added directory parameter for v2 API"
+    ],
+    "passes": true,
+    "notes": "Migration complete at session-handler.ts:788"
   },
   {
     "category": "functional",
     "description": "Update command call to use flat parameter style instead of `path: { id: ... }`",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Changed from { path: { id }, body: { command, arguments, agent }, signal } to",
+      "{ sessionID, directory, command, arguments, agent }, { signal }"
+    ],
+    "passes": true,
+    "notes": "v2 uses flat params in first arg, options (signal) in second arg"
   },
   {
     "category": "functional",
     "description": "Ensure model/agent fallback logic remains unchanged after migration",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "modelParam logic unchanged (lines 656-667)",
+      "agentPreference logic unchanged (lines 669-673)",
+      "Both still passed to v2 API calls"
+    ],
+    "passes": true,
+    "notes": "Model/agent preference reading and fallback pattern preserved exactly"
   },
   {
     "category": "functional",

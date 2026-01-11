@@ -27,6 +27,7 @@ import {
   handleModelCommand,
   handleProviderSelectMenu,
   handleModelSelectMenu,
+  handleModelVariantSelectMenu,
 } from './commands/model.js'
 import { handleAgentCommand, handleAgentSelectMenu } from './commands/agent.js'
 import {
@@ -186,6 +187,11 @@ export function registerInteractionHandler({
 
           if (customId.startsWith('model_select:')) {
             await handleModelSelectMenu(interaction)
+            return
+          }
+
+          if (customId.startsWith('model_variant:')) {
+            await handleModelVariantSelectMenu(interaction)
             return
           }
 

@@ -585,128 +585,198 @@
   {
     "category": "functional",
     "description": "In model.ts: create `pendingModelVariantContexts` Map for variant selection contexts",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Added Map at lines 47-62 in model.ts",
+      "Stores dir, channelId, sessionId, isThread, providerId, providerName, modelId, modelName, thread"
+    ],
+    "passes": true,
+    "notes": "Map stores full context needed to persist model+variant after selection"
   },
   {
     "category": "functional",
     "description": "In model.ts: add TODO comment about TTL cleanup being technical debt",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Added TODO comment at line 48: 'TODO: Add TTL cleanup - technical debt for memory management'"
+    ],
+    "passes": true,
+    "notes": "Comment added above pendingModelVariantContexts Map"
   },
   {
     "category": "functional",
     "description": "In `handleModelSelectMenu`: after model is selected, fetch model metadata via v2",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Added clientV2.provider.list() call at lines 456-475",
+      "Fetches providers to access selected model's variants"
+    ],
+    "passes": true,
+    "notes": "Uses existing getOpencodeClientV2 pattern"
   },
   {
     "category": "functional",
     "description": "In `handleModelSelectMenu`: check if selected model has variants",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Added variant check at lines 480-484",
+      "Checks model?.variants and Object.keys length"
+    ],
+    "passes": true,
+    "notes": "Uses buildVariantOptions to get enabled variants count"
   },
   {
     "category": "functional",
     "description": "In `handleModelSelectMenu`: if no variants, persist model immediately",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Implemented at lines 511-547",
+      "Stores model via setSessionModel/setChannelModel when no variants"
+    ],
+    "passes": true,
+    "notes": "Falls through to persist when hasEnabledVariants is false"
   },
   {
     "category": "functional",
     "description": "In `handleModelSelectMenu`: if no variants, call `clearSessionVariant` or `clearChannelVariant` to clear old variant",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Added clearSessionVariant at line 513",
+      "Added clearChannelVariant at line 532"
+    ],
+    "passes": true,
+    "notes": "Clears old variant when switching to model without variants"
   },
   {
     "category": "functional",
     "description": "In `handleModelSelectMenu`: if variants exist, build variant picker (reuse logic from variant.ts)",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Added buildVariantOptions helper at lines 77-112",
+      "Same pattern as variant.ts - filters disabled, sorts, limits to 24, adds Default"
+    ],
+    "passes": true,
+    "notes": "Helper function duplicated to avoid cross-module dependency"
   },
   {
     "category": "functional",
     "description": "In `handleModelSelectMenu`: store context with providerId, providerName, modelId in Map",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Stores context in pendingModelVariantContexts at lines 488-499",
+      "Includes all required fields for variant selection persistence"
+    ],
+    "passes": true,
+    "notes": "Context includes modelName for display in confirmation message"
   },
   {
     "category": "functional",
     "description": "In `handleModelSelectMenu`: show variant picker with customId `model_variant:{hash}`",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Creates StringSelectMenuBuilder at lines 501-504",
+      "Uses customId format model_variant:{contextHash}"
+    ],
+    "passes": true,
+    "notes": "Variant picker shown with context hash for lookup"
   },
   {
     "category": "functional",
     "description": "In `handleModelSelectMenu`: only persist model+variant after variant selection",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Model is NOT persisted when variants exist - returns early at line 510",
+      "Persistence happens in handleModelVariantSelectMenu instead"
+    ],
+    "passes": true,
+    "notes": "Model selection flow continues to variant selection before persisting"
   },
   {
     "category": "functional",
     "description": "Create `handleModelVariantSelectMenu` function in model.ts",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Created function at lines 558-628",
+      "Handles model_variant: customId prefix"
+    ],
+    "passes": true,
+    "notes": "Function signature matches handleVariantSelectMenu pattern"
   },
   {
     "category": "functional",
     "description": "In handleModelVariantSelectMenu: extract context hash from customId",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Extracts hash at line 566: customId.replace('model_variant:', '')"
+    ],
+    "passes": true,
+    "notes": "Same pattern as other select menu handlers"
   },
   {
     "category": "functional",
     "description": "In handleModelVariantSelectMenu: retrieve context from `pendingModelVariantContexts` Map",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Retrieves context at line 567: pendingModelVariantContexts.get(contextHash)"
+    ],
+    "passes": true,
+    "notes": "Returns full context needed for persistence"
   },
   {
     "category": "functional",
     "description": "In handleModelVariantSelectMenu: if no context found, reply with error",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Error handling at lines 569-575",
+      "Returns 'Selection expired. Please run /model again.'"
+    ],
+    "passes": true,
+    "notes": "Handles expired/missing context gracefully"
   },
   {
     "category": "functional",
     "description": "In handleModelVariantSelectMenu: get selected variant value from interaction",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": ["Gets value at line 577: interaction.values[0]"],
+    "passes": true,
+    "notes": "Same pattern as other select handlers"
   },
   {
     "category": "functional",
     "description": "In handleModelVariantSelectMenu: persist model preference (existing logic)",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Persists model at lines 590, 609: setSessionModel/setChannelModel"
+    ],
+    "passes": true,
+    "notes": "Uses existing database helpers"
   },
   {
     "category": "functional",
     "description": "In handleModelVariantSelectMenu: if \"Default\" selected, call clear variant helper",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Checks isDefault at line 586: selectedVariant === '__default__'",
+      "Calls clearSessionVariant at line 592 or clearChannelVariant at line 612"
+    ],
+    "passes": true,
+    "notes": "Clears variant when Default is selected"
   },
   {
     "category": "functional",
     "description": "In handleModelVariantSelectMenu: otherwise, call set variant helper",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Calls setSessionVariant at line 594 or setChannelVariant at line 614"
+    ],
+    "passes": true,
+    "notes": "Sets variant when non-default selected"
   },
   {
     "category": "functional",
     "description": "In handleModelVariantSelectMenu: call `abortAndRetrySession` to apply immediately",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": ["Calls abortAndRetrySession at lines 599-604 for session scope"],
+    "passes": true,
+    "notes": "Only for session scope when thread exists"
   },
   {
     "category": "functional",
     "description": "In handleModelVariantSelectMenu: send confirmation message including variant in format: \"**Provider** / **Model** / **Variant**\"",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Confirmation at lines 606-608, 617-619",
+      "Format: **providerName** / **modelName** / **variantDisplay**"
+    ],
+    "passes": true,
+    "notes": "Shows full path: Provider / Model / Variant"
   },
   {
     "category": "functional",
     "description": "Export `handleModelVariantSelectMenu` from model.ts",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": ["Function exported via 'export async function' declaration"],
+    "passes": true,
+    "notes": "Exported at module level"
   },
   {
     "category": "functional",
@@ -829,8 +899,12 @@
   {
     "category": "functional",
     "description": "Import `handleModelVariantSelectMenu` from `./commands/model.js`",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Added to import at lines 26-31 in interaction-handler.ts",
+      "Import: { handleModelCommand, handleProviderSelectMenu, handleModelSelectMenu, handleModelVariantSelectMenu }"
+    ],
+    "passes": true,
+    "notes": "Added to existing model.js import block"
   },
   {
     "category": "functional",
@@ -870,20 +944,34 @@
   {
     "category": "functional",
     "description": "Add routing for `model_variant:` prefix:",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Added if block at lines 191-195 in interaction-handler.ts",
+      "Checks customId.startsWith('model_variant:')",
+      "Calls handleModelVariantSelectMenu(interaction)"
+    ],
+    "passes": true,
+    "notes": "Added after model_select handler"
   },
   {
     "category": "functional",
     "description": "Run `pnpm tsc` from `discord` directory - full project typecheck",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Ran bun tsc --noEmit in discord directory",
+      "Source code compiles clean",
+      "Only errors are pre-existing vitest import errors in test files"
+    ],
+    "passes": true,
+    "notes": "Typecheck verified. Pre-existing test file errors (vitest not in deps) don't affect source."
   },
   {
     "category": "functional",
     "description": "Fix any remaining type errors",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Fixed type error at line 484: changed model.variants to variants variable",
+      "TypeScript narrowing now works correctly with extracted variable"
+    ],
+    "passes": true,
+    "notes": "No remaining type errors in source code"
   },
   {
     "category": "functional",

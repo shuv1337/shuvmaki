@@ -14,6 +14,10 @@ import {
   getDatabase,
   setChannelModel,
   setSessionModel,
+  setSessionVariant,
+  setChannelVariant,
+  clearSessionVariant,
+  clearChannelVariant,
   runModelMigrations,
 } from '../database.js'
 import {
@@ -40,6 +44,23 @@ const pendingModelContexts = new Map<
   }
 >()
 
+// Store context for model variant selection (shown after model is selected if variants exist)
+// TODO: Add TTL cleanup - technical debt for memory management
+const pendingModelVariantContexts = new Map<
+  string,
+  {
+    dir: string
+    channelId: string
+    sessionId?: string
+    isThread: boolean
+    providerId: string
+    providerName: string
+    modelId: string
+    modelName: string
+    thread?: ThreadChannel
+  }
+>()
+
 export type ProviderInfo = {
   id: string
   name: string
@@ -51,6 +72,42 @@ export type ProviderInfo = {
       release_date: string
     }
   >
+}
+
+/**
+ * Build variant options from model metadata.
+ * Filters disabled variants, sorts alphabetically, limits to 24, adds Default option.
+ */
+function buildVariantOptions(variants: {
+  [key: string]: { [key: string]: unknown }
+}): Array<{ label: string; value: string; description: string }> {
+  const entries = Object.entries(variants)
+    .filter(([, v]) => {
+      return !(v as { disabled?: boolean }).disabled
+    })
+    .sort(([a], [b]) => {
+      return a.localeCompare(b)
+    })
+    .slice(0, 24)
+
+  const options = entries.map(([key, value]) => {
+    const description =
+      (value as { description?: string }).description || 'Model variant'
+    return {
+      label: key.slice(0, 100),
+      value: key,
+      description: description.slice(0, 100),
+    }
+  })
+
+  // Add Default option at the end
+  options.push({
+    label: 'Default',
+    value: '__default__',
+    description: 'Use model without a specific variant',
+  })
+
+  return options
 }
 
 /**
@@ -352,7 +409,7 @@ export async function handleProviderSelectMenu(
 
 /**
  * Handle the model select menu interaction.
- * Stores the model preference in the database.
+ * If model has variants, shows variant picker. Otherwise stores model preference directly.
  */
 export async function handleModelSelectMenu(
   interaction: StringSelectMenuInteraction,
@@ -390,15 +447,85 @@ export async function handleModelSelectMenu(
   const fullModelId = `${context.providerId}/${selectedModelId}`
 
   try {
-    // Store in appropriate table based on context
+    // Fetch model metadata to check for variants
+    const clientV2 = getOpencodeClientV2(context.dir)
+    if (!clientV2) {
+      await interaction.editReply({
+        content: 'Failed to connect to OpenCode server',
+        components: [],
+      })
+      return
+    }
+
+    const { data: providersData, error: providersError } =
+      await clientV2.provider.list({
+        directory: context.dir,
+      })
+
+    if (providersError || !providersData) {
+      modelLogger.error('[MODEL] Failed to fetch providers:', providersError)
+      await interaction.editReply({
+        content: 'Failed to fetch model metadata',
+        components: [],
+      })
+      return
+    }
+
+    const provider = providersData.all.find((p) => {
+      return p.id === context.providerId
+    })
+    const model = provider?.models[selectedModelId]
+    const modelName = model?.name || selectedModelId
+
+    // Check if model has variants
+    const variants = model?.variants
+    const hasVariants = variants && Object.keys(variants).length > 0
+    const variantOptions = hasVariants ? buildVariantOptions(variants) : []
+    const hasEnabledVariants = variantOptions.length > 1 // More than just "Default"
+
+    if (hasEnabledVariants) {
+      // Model has variants - show variant picker
+      const variantContextHash = crypto.randomBytes(8).toString('hex')
+      pendingModelVariantContexts.set(variantContextHash, {
+        dir: context.dir,
+        channelId: context.channelId,
+        sessionId: context.sessionId,
+        isThread: context.isThread,
+        providerId: context.providerId,
+        providerName: context.providerName,
+        modelId: selectedModelId,
+        modelName,
+        thread: context.thread,
+      })
+
+      const selectMenu = new StringSelectMenuBuilder()
+        .setCustomId(`model_variant:${variantContextHash}`)
+        .setPlaceholder('Select a variant')
+        .addOptions(variantOptions)
+
+      const actionRow =
+        new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+          selectMenu,
+        )
+
+      await interaction.editReply({
+        content: `**Set Model Preference**\nProvider: **${context.providerName}**\nModel: **${modelName}**\nSelect a variant:`,
+        components: [actionRow],
+      })
+
+      // Clean up model context
+      pendingModelContexts.delete(contextHash)
+      return
+    }
+
+    // No variants - persist model directly and clear any existing variant
     if (context.isThread && context.sessionId) {
-      // Store for session
       setSessionModel(context.sessionId, fullModelId)
+      clearSessionVariant(context.sessionId)
       modelLogger.log(
-        `Set model ${fullModelId} for session ${context.sessionId}`,
+        `Set model ${fullModelId} for session ${context.sessionId} (no variants)`,
       )
 
-      // Check if there's a running request and abort+retry with new model
       let retried = false
       if (context.thread) {
         retried = await abortAndRetrySession({
@@ -410,32 +537,131 @@ export async function handleModelSelectMenu(
 
       if (retried) {
         await interaction.editReply({
-          content: `Model changed for this session:\n**${context.providerName}** / **${selectedModelId}**\n\n\`${fullModelId}\`\n\n_Retrying current request with new model..._`,
+          content: `Model changed for this session:\n**${context.providerName}** / **${modelName}**\n\n\`${fullModelId}\`\n\n_Retrying current request with new model..._`,
           components: [],
         })
       } else {
         await interaction.editReply({
-          content: `Model preference set for this session:\n**${context.providerName}** / **${selectedModelId}**\n\n\`${fullModelId}\``,
+          content: `Model preference set for this session:\n**${context.providerName}** / **${modelName}**\n\n\`${fullModelId}\``,
           components: [],
         })
       }
     } else {
-      // Store for channel
       setChannelModel(context.channelId, fullModelId)
+      clearChannelVariant(context.channelId)
       modelLogger.log(
-        `Set model ${fullModelId} for channel ${context.channelId}`,
+        `Set model ${fullModelId} for channel ${context.channelId} (no variants)`,
       )
 
       await interaction.editReply({
-        content: `Model preference set for this channel:\n**${context.providerName}** / **${selectedModelId}**\n\n\`${fullModelId}\`\n\nAll new sessions in this channel will use this model.`,
+        content: `Model preference set for this channel:\n**${context.providerName}** / **${modelName}**\n\n\`${fullModelId}\`\n\nAll new sessions in this channel will use this model.`,
         components: [],
       })
     }
 
-    // Clean up the context from memory
     pendingModelContexts.delete(contextHash)
   } catch (error) {
     modelLogger.error('Error saving model preference:', error)
+    await interaction.editReply({
+      content: `Failed to save model preference: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      components: [],
+    })
+  }
+}
+
+/**
+ * Handle the model variant select menu interaction.
+ * Stores both model and variant preference.
+ */
+export async function handleModelVariantSelectMenu(
+  interaction: StringSelectMenuInteraction,
+): Promise<void> {
+  const customId = interaction.customId
+
+  if (!customId.startsWith('model_variant:')) {
+    return
+  }
+
+  await interaction.deferUpdate()
+
+  const contextHash = customId.replace('model_variant:', '')
+  const context = pendingModelVariantContexts.get(contextHash)
+
+  if (!context) {
+    await interaction.editReply({
+      content: 'Selection expired. Please run /model again.',
+      components: [],
+    })
+    return
+  }
+
+  const selectedVariant = interaction.values[0]
+  if (!selectedVariant) {
+    await interaction.editReply({
+      content: 'No variant selected',
+      components: [],
+    })
+    return
+  }
+
+  try {
+    const fullModelId = `${context.providerId}/${context.modelId}`
+    const isDefault = selectedVariant === '__default__'
+    const variantDisplay = isDefault ? 'Default' : selectedVariant
+
+    if (context.isThread && context.sessionId) {
+      // Session-level: persist model + variant
+      setSessionModel(context.sessionId, fullModelId)
+      if (isDefault) {
+        clearSessionVariant(context.sessionId)
+      } else {
+        setSessionVariant(context.sessionId, selectedVariant)
+      }
+      modelLogger.log(
+        `Set model ${fullModelId} + variant ${variantDisplay} for session ${context.sessionId}`,
+      )
+
+      let retried = false
+      if (context.thread) {
+        retried = await abortAndRetrySession({
+          sessionId: context.sessionId,
+          thread: context.thread,
+          projectDirectory: context.dir,
+        })
+      }
+
+      if (retried) {
+        await interaction.editReply({
+          content: `Model changed for this session:\n**${context.providerName}** / **${context.modelName}** / **${variantDisplay}**\n\n\`${fullModelId}\`\n\n_Retrying current request with new model..._`,
+          components: [],
+        })
+      } else {
+        await interaction.editReply({
+          content: `Model preference set for this session:\n**${context.providerName}** / **${context.modelName}** / **${variantDisplay}**\n\n\`${fullModelId}\``,
+          components: [],
+        })
+      }
+    } else {
+      // Channel-level: persist model + variant
+      setChannelModel(context.channelId, fullModelId)
+      if (isDefault) {
+        clearChannelVariant(context.channelId)
+      } else {
+        setChannelVariant(context.channelId, selectedVariant)
+      }
+      modelLogger.log(
+        `Set model ${fullModelId} + variant ${variantDisplay} for channel ${context.channelId}`,
+      )
+
+      await interaction.editReply({
+        content: `Model preference set for this channel:\n**${context.providerName}** / **${context.modelName}** / **${variantDisplay}**\n\n\`${fullModelId}\`\n\nAll new sessions in this channel will use this model.`,
+        components: [],
+      })
+    }
+
+    pendingModelVariantContexts.delete(contextHash)
+  } catch (error) {
+    modelLogger.error('Error saving model+variant preference:', error)
     await interaction.editReply({
       content: `Failed to save model preference: ${error instanceof Error ? error.message : 'Unknown error'}`,
       components: [],

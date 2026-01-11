@@ -152,3 +152,27 @@
   - Typecheck: Source compiles clean (pre-existing vitest errors in test files only)
   - Tests: Pre-existing snapshot mismatches (unrelated to changes)
   - Lint: No lint script available
+
+## Iteration 11 - 2026-01-11
+- **Implemented**: Variant picker in **`/model` command flow**
+- **Files**:
+  - `discord/src/commands/model.ts` - Added variant selection after model selection
+  - `discord/src/interaction-handler.ts` - Added routing for `model_variant:` prefix
+- **Changes**:
+  - **model.ts**:
+    - Added variant helper imports: `setSessionVariant`, `setChannelVariant`, `clearSessionVariant`, `clearChannelVariant`
+    - Added `pendingModelVariantContexts` Map with TODO for TTL cleanup
+    - Added `buildVariantOptions` helper (same pattern as variant.ts)
+    - Modified `handleModelSelectMenu` to check for variants after model selection
+    - If variants exist: shows variant picker with `model_variant:{hash}` customId
+    - If no variants: persists model directly and clears any existing variant
+    - Added `handleModelVariantSelectMenu` to handle variant selection and persist model+variant
+    - Confirmation format: **Provider** / **Model** / **Variant**
+  - **interaction-handler.ts**:
+    - Added `handleModelVariantSelectMenu` import
+    - Added routing for `model_variant:` prefix
+- **Why**: **High-risk/high-impact** - users selecting a model with variants (e.g., Claude with thinking modes) now see a variant picker as part of the `/model` flow. Complete 3-step flow: Provider → Model → Variant.
+- **Feedback**:
+  - Typecheck: Source compiles clean (pre-existing vitest errors in test files only)
+  - Tests: Pre-existing snapshot mismatches (unrelated to changes)
+  - Lint: No lint script available

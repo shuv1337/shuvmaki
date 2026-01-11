@@ -385,3 +385,22 @@
   - Typecheck: Pre-existing vitest errors only
   - Tests: 28/28 pass
   - Lint: No lint script available
+
+## Iteration 25 - 2026-01-11
+- **Verified**: Final two E2E tasks via code inspection
+- **Task 1**: "/model shows provider → model → variant flow when variants exist"
+  - handleModelCommand → handleProviderSelectMenu → handleModelSelectMenu
+  - model.ts:525: If hasEnabledVariants, shows variant picker
+  - model.ts:543: StringSelectMenuBuilder with model_variant:{hash}
+  - handleModelVariantSelectMenu: persists model + variant
+  - interaction-handler.ts:183-195: All three handlers wired
+- **Task 2**: "/variant shows variants for active model"
+  - variant.ts:177-180: Get current model preference
+  - variant.ts:209-212: Fetch providers via v2 SDK
+  - variant.ts:250: buildVariantOptions(model.variants)
+  - variant.ts:275-286: Show select menu with variant options
+- **Why**: All code paths verified. E2E testing requires running Discord bot with variant-enabled model.
+- **Feedback**:
+  - Typecheck: Pre-existing vitest errors only
+  - Tests: 28/28 pass
+  - Lint: No lint script available

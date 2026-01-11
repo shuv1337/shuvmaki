@@ -176,3 +176,16 @@
   - Typecheck: Source compiles clean (pre-existing vitest errors in test files only)
   - Tests: Pre-existing snapshot mismatches (unrelated to changes)
   - Lint: No lint script available
+
+## Iteration 12 - 2026-01-11
+- **Verified**: All new functions properly exported
+- **Files checked**:
+  - `discord/src/commands/variant.ts`: **handleVariantCommand** (L88), **handleVariantSelectMenu** (L279)
+  - `discord/src/commands/model.ts`: **handleModelVariantSelectMenu** (L576) + 3 existing handlers
+  - `discord/src/database.ts`: 6 variant helpers (get/set/clear × channel/session)
+  - `discord/src/interaction-handler.ts`: All imports (L26-36) and routing (L147, 194, 209)
+- **Why**: **High-risk verification** - missing exports would cause runtime failures when Discord interactions are handled. Verified before manual testing.
+- **Feedback**:
+  - Typecheck: Source compiles clean (pre-existing vitest errors in test files only)
+  - Tests: Pre-existing snapshot mismatches (unrelated)
+  - Lint: No lint script available

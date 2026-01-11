@@ -982,8 +982,15 @@
   {
     "category": "functional",
     "description": "Verify all new functions are properly exported",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Verified variant.ts exports: handleVariantCommand (line 88), handleVariantSelectMenu (line 279)",
+      "Verified model.ts exports: handleModelCommand (117), handleProviderSelectMenu (281), handleModelSelectMenu (414), handleModelVariantSelectMenu (576)",
+      "Verified database.ts exports all 6 variant helpers: get/set/clearChannelVariant, get/set/clearSessionVariant",
+      "Verified interaction-handler.ts imports: all handlers imported at lines 26-36",
+      "Verified interaction-handler.ts routing: variant handlers called at lines 147, 194, 209"
+    ],
+    "passes": true,
+    "notes": "All new functions properly exported and imported. Typecheck passes (pre-existing vitest errors in test files only)."
   },
   {
     "category": "functional",

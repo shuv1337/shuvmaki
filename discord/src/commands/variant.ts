@@ -65,7 +65,7 @@ function cleanupExpiredContexts(): void {
  * Build variant options from model metadata.
  * Filters disabled variants, sorts alphabetically, limits to 24, adds Default option.
  */
-function buildVariantOptions(variants: {
+export function buildVariantOptions(variants: {
   [key: string]: { [key: string]: unknown }
 }): Array<{ label: string; value: string; description: string }> {
   const entries = Object.entries(variants)

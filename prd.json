@@ -1052,14 +1052,29 @@
   {
     "category": "functional",
     "description": "Test variant list respects 24+Default limit",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Created discord/src/commands/variant.test.ts with 10 unit tests",
+      "Exported buildVariantOptions function for testability",
+      "Test 'limits to 24 variants plus Default (25 total)' validates limit",
+      "Creates 30 variants, verifies only first 24 alphabetically + Default returned",
+      "All tests pass: bun test src/commands/variant.test.ts --run"
+    ],
+    "passes": true,
+    "notes": "Unit test validates the 24+Default limit in buildVariantOptions helper. Test generates 30 variants and asserts exactly 25 options returned (24 + Default)."
   },
   {
     "category": "functional",
     "description": "Test disabled variants are filtered out",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Test 'filters out disabled variants' validates filtering",
+      "Test input: 2 enabled, 2 disabled variants",
+      "Asserts: only enabled variants + Default in output",
+      "Test 'disabled=false is treated as enabled' covers edge case",
+      "Test 'handles all variants disabled' covers empty result case",
+      "All tests pass: bun test src/commands/variant.test.ts --run"
+    ],
+    "passes": true,
+    "notes": "Unit tests validate disabled variant filtering. Covers: disabled=true filtered, disabled=false kept, all-disabled results in only Default option."
   },
   {
     "category": "functional",

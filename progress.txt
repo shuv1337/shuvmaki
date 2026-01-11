@@ -254,3 +254,21 @@
   - Typecheck: Source compiles clean (pre-existing vitest errors in test files only)
   - Tests: xml.test.ts (5/5), database-variants.test.ts (13/13) pass
   - Lint: No lint script available
+
+## Iteration 17 - 2026-01-11
+- **Added**: Unit tests for `buildVariantOptions` helper function
+- **Files**:
+  - `discord/src/commands/variant.ts` - Exported `buildVariantOptions` for testability
+  - `discord/src/commands/variant.test.ts` (new file, 10 tests)
+- **Tests cover**:
+  - **24+Default limit**: Creates 30 variants, verifies exactly 25 options (24 alphabetically + Default)
+  - **Disabled filtering**: disabled=true filtered out, disabled=false kept, all-disabled → only Default
+  - **Alphabetical sorting**: Verifies options sorted by key name
+  - **Description handling**: Uses variant description, falls back to 'Model variant'
+  - **Truncation**: Labels and descriptions capped at 100 chars
+  - **Edge cases**: Empty variants, all disabled variants
+- **Why**: High-risk validation - `buildVariantOptions` has non-trivial filter/sort/limit logic. Unit tests catch regressions without manual Discord testing.
+- **Feedback**:
+  - Typecheck: Source compiles clean (pre-existing vitest errors in old test files only)
+  - Tests: **10/10 pass** for new tests, pre-existing snapshot mismatches in other test files
+  - Lint: No lint script available

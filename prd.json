@@ -1019,8 +1019,18 @@
   {
     "category": "functional",
     "description": "Test `/model` for a model without variants clears any stored variant",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Code-level verification of model.ts handleModelSelectMenu flow",
+      "Line 520-521: Check if model has variants via model?.variants",
+      "Line 522-523: buildVariantOptions returns options, check if more than just 'Default'",
+      "Line 525: if hasEnabledVariants → show variant picker",
+      "Line 562: Comment: 'No variants - persist model directly and clear any existing variant'",
+      "Line 565: clearSessionVariant(context.sessionId) for session scope",
+      "Line 592: clearChannelVariant(context.channelId) for channel scope",
+      "Clear is called ONLY when model has no enabled variants"
+    ],
+    "passes": true,
+    "notes": "Code-level verification complete. When user selects a model without variants, any stored variant is cleared. This prevents stale variant being applied to wrong model."
   },
   {
     "category": "functional",

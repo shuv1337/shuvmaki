@@ -353,3 +353,18 @@
   - Typecheck: Pre-existing vitest errors only
   - Tests: 28/28 pass
   - Lint: No lint script available
+
+## Iteration 23 - 2026-01-11
+- **Verified**: `/model` for model without variants **clears stored variant** via code inspection
+- **File**: `discord/src/commands/model.ts:515-605`
+- **Logic**:
+  - Line 520-523: Check `model?.variants` and `hasEnabledVariants`
+  - Line 525: If variants exist → show variant picker
+  - Line 562: Comment: "No variants - persist model directly and clear any existing variant"
+  - Line 565: `clearSessionVariant(context.sessionId)` for session scope
+  - Line 592: `clearChannelVariant(context.channelId)` for channel scope
+- **Why**: Prevents stale variant applied to wrong model. If user switches from Claude (with thinking variants) to GPT-4 (no variants), the old variant must be cleared.
+- **Feedback**:
+  - Typecheck: Pre-existing vitest errors only
+  - Tests: 28/28 pass
+  - Lint: No lint script available

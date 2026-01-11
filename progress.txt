@@ -234,3 +234,23 @@
   - Typecheck: Source compiles clean (pre-existing vitest errors in old test files only)
   - Tests: **13/13 pass** for new tests, pre-existing snapshot mismatches in other test files
   - Lint: No lint script available
+
+## Iteration 16 - 2026-01-11
+- **Migrated**: `markdown.ts` from **v1 to v2 SDK** for consistency
+- **Files**:
+  - `discord/src/markdown.ts` - Core migration
+  - `discord/src/tools.ts` - Updated to pass v2 client
+  - `discord/src/discord-bot.ts` - Updated to pass v2 client
+  - `discord/src/markdown.test.ts` - Updated tests to use v2 SDK
+- **Changes**:
+  - `ShareMarkdown` class now accepts `OpencodeClientV2` + `directory` instead of `OpencodeClient`
+  - `session.get({ path: { id } })` → `session.get({ sessionID, directory })`
+  - `session.messages({ path: { id } })` → `session.messages({ sessionID, directory })`
+  - `session.list()` → `session.list({ directory })`
+  - `getCompactSessionContext` and `getLastSessionId` now require `directory` parameter
+  - Callers updated to use `getOpencodeClientV2(directory)` instead of `getClient()`
+- **Why**: **Consistency with v2 migrations** - all other modules (session-handler, model, variant, ask-question) use v2 SDK. Leaving markdown.ts on v1 creates technical debt and risk of API divergence.
+- **Feedback**:
+  - Typecheck: Source compiles clean (pre-existing vitest errors in test files only)
+  - Tests: xml.test.ts (5/5), database-variants.test.ts (13/13) pass
+  - Lint: No lint script available

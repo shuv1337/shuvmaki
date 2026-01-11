@@ -2,7 +2,7 @@
 // Generates shareable markdown from OpenCode sessions, formatting
 // user messages, assistant responses, tool calls, and reasoning blocks.
 
-import type { OpencodeClient } from '@opencode-ai/sdk'
+import type { OpencodeClient as OpencodeClientV2 } from '@opencode-ai/sdk/v2'
 import * as yaml from 'js-yaml'
 import { formatDateTime } from './utils.js'
 import { extractNonXmlContent } from './xml.js'
@@ -11,7 +11,10 @@ import { createLogger } from './logger.js'
 const markdownLogger = createLogger('MARKDOWN')
 
 export class ShareMarkdown {
-  constructor(private client: OpencodeClient) {}
+  constructor(
+    private client: OpencodeClientV2,
+    private directory: string,
+  ) {}
 
   /**
    * Generate a markdown representation of a session
@@ -26,22 +29,24 @@ export class ShareMarkdown {
     const { sessionID, includeSystemInfo, lastAssistantOnly } = options
 
     // Get session info
-    const sessionResponse = await this.client.session.get({
-      path: { id: sessionID },
-    })
-    if (!sessionResponse.data) {
+    const { data: session, error: sessionError } =
+      await this.client.session.get({
+        sessionID,
+        directory: this.directory,
+      })
+    if (sessionError || !session) {
       throw new Error(`Session ${sessionID} not found`)
     }
-    const session = sessionResponse.data
 
     // Get all messages
-    const messagesResponse = await this.client.session.messages({
-      path: { id: sessionID },
-    })
-    if (!messagesResponse.data) {
+    const { data: messages, error: messagesError } =
+      await this.client.session.messages({
+        sessionID,
+        directory: this.directory,
+      })
+    if (messagesError || !messages) {
       throw new Error(`No messages found for session ${sessionID}`)
     }
-    const messages = messagesResponse.data
 
     // If lastAssistantOnly, filter to only the last assistant message
     const messagesToRender = lastAssistantOnly
@@ -242,20 +247,28 @@ export class ShareMarkdown {
  */
 export async function getCompactSessionContext({
   client,
+  directory,
   sessionId,
   includeSystemPrompt = false,
   maxMessages = 20,
 }: {
-  client: OpencodeClient
+  client: OpencodeClientV2
+  directory: string
   sessionId: string
   includeSystemPrompt?: boolean
   maxMessages?: number
 }): Promise<string> {
   try {
-    const messagesResponse = await client.session.messages({
-      path: { id: sessionId },
-    })
-    const messages = messagesResponse.data || []
+    const { data: messagesData, error: messagesError } =
+      await client.session.messages({
+        sessionID: sessionId,
+        directory,
+      })
+    if (messagesError) {
+      markdownLogger.error('Failed to get session messages:', messagesError)
+      return ''
+    }
+    const messages = messagesData || []
 
     const lines: string[] = []
 
@@ -298,7 +311,9 @@ export async function getCompactSessionContext({
       } else if (msg.info.role === 'assistant') {
         // Get assistant text parts (non-synthetic, non-empty)
         const textParts = (msg.parts || [])
-          .filter((p) => p.type === 'text' && 'text' in p && !p.synthetic && p.text)
+          .filter(
+            (p) => p.type === 'text' && 'text' in p && !p.synthetic && p.text,
+          )
           .map((p) => ('text' in p ? p.text : ''))
           .filter(Boolean)
         if (textParts.length > 0) {
@@ -324,7 +339,10 @@ export async function getCompactSessionContext({
             // compact params: just key=value on one line
             const params = Object.entries(input)
               .map(([k, v]) => {
-                const val = typeof v === 'string' ? v.slice(0, 100) : JSON.stringify(v).slice(0, 100)
+                const val =
+                  typeof v === 'string'
+                    ? v.slice(0, 100)
+                    : JSON.stringify(v).slice(0, 100)
                 return `${k}=${val}`
               })
               .join(', ')
@@ -346,14 +364,21 @@ export async function getCompactSessionContext({
  */
 export async function getLastSessionId({
   client,
+  directory,
   excludeSessionId,
 }: {
-  client: OpencodeClient
+  client: OpencodeClientV2
+  directory: string
   excludeSessionId?: string
 }): Promise<string | null> {
   try {
-    const sessionsResponse = await client.session.list()
-    const sessions = sessionsResponse.data || []
+    const { data: sessionsData, error: sessionsError } =
+      await client.session.list({ directory })
+    if (sessionsError) {
+      markdownLogger.error('Failed to list sessions:', sessionsError)
+      return null
+    }
+    const sessions = sessionsData || []
 
     // Sessions are sorted by time, get the most recent one that isn't the current
     const lastSession = sessions.find((s) => s.id !== excludeSessionId)

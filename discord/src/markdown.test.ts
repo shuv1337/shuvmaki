@@ -1,11 +1,12 @@
 import { test, expect, beforeAll, afterAll } from 'vitest'
 import { spawn, type ChildProcess } from 'child_process'
-import { OpencodeClient } from '@opencode-ai/sdk'
+import { createOpencodeClient, type OpencodeClient } from '@opencode-ai/sdk/v2'
 import { ShareMarkdown, getCompactSessionContext } from './markdown.js'
 
 let serverProcess: ChildProcess
 let client: OpencodeClient
 let port: number
+const testDirectory = process.cwd()
 
 const waitForServer = async (port: number, maxAttempts = 30) => {
   for (let i = 0; i < maxAttempts; i++) {
@@ -71,11 +72,10 @@ beforeAll(async () => {
   // Wait for server to start
   await waitForServer(port)
 
-  // Create client - it should connect to the default port
-  client = new OpencodeClient()
-
-  // Set the baseURL via environment variable if needed
-  process.env.OPENCODE_API_URL = `http://localhost:${port}`
+  // Create client - use v2 SDK with explicit baseUrl
+  client = createOpencodeClient({
+    baseUrl: `http://localhost:${port}`,
+  })
 
   console.log('Client created and connected to server')
 }, 60000)
@@ -95,16 +95,18 @@ test('generate markdown from first available session', async () => {
   console.log('Fetching sessions list...')
 
   // Get list of existing sessions
-  const sessionsResponse = await client.session.list()
+  const { data: sessions } = await client.session.list({
+    directory: testDirectory,
+  })
 
-  if (!sessionsResponse.data || sessionsResponse.data.length === 0) {
+  if (!sessions || sessions.length === 0) {
     console.warn('No existing sessions found, skipping test')
     expect(true).toBe(true)
     return
   }
 
   // Filter sessions with 'kimaki' in their directory
-  const kimakiSessions = sessionsResponse.data.filter((session) =>
+  const kimakiSessions = sessions.filter((session) =>
     session.directory.toLowerCase().includes('kimaki'),
   )
 
@@ -122,7 +124,7 @@ test('generate markdown from first available session', async () => {
   )
 
   // Create markdown exporter
-  const exporter = new ShareMarkdown(client)
+  const exporter = new ShareMarkdown(client, testDirectory)
 
   // Generate markdown with system info
   const markdown = await exporter.generate({
@@ -145,16 +147,18 @@ test('generate markdown from first available session', async () => {
 })
 
 test('generate markdown without system info', async () => {
-  const sessionsResponse = await client.session.list()
+  const { data: sessions } = await client.session.list({
+    directory: testDirectory,
+  })
 
-  if (!sessionsResponse.data || sessionsResponse.data.length === 0) {
+  if (!sessions || sessions.length === 0) {
     console.warn('No existing sessions found, skipping test')
     expect(true).toBe(true)
     return
   }
 
   // Filter sessions with 'kimaki' in their directory
-  const kimakiSessions = sessionsResponse.data.filter((session) =>
+  const kimakiSessions = sessions.filter((session) =>
     session.directory.toLowerCase().includes('kimaki'),
   )
 
@@ -167,7 +171,7 @@ test('generate markdown without system info', async () => {
   const firstSession = kimakiSessions[0]
   const sessionID = firstSession!.id
 
-  const exporter = new ShareMarkdown(client)
+  const exporter = new ShareMarkdown(client, testDirectory)
 
   // Generate without system info
   const markdown = await exporter.generate({
@@ -190,16 +194,18 @@ test('generate markdown without system info', async () => {
 })
 
 test('generate markdown from session with tools', async () => {
-  const sessionsResponse = await client.session.list()
+  const { data: sessions } = await client.session.list({
+    directory: testDirectory,
+  })
 
-  if (!sessionsResponse.data || sessionsResponse.data.length === 0) {
+  if (!sessions || sessions.length === 0) {
     console.warn('No existing sessions found, skipping test')
     expect(true).toBe(true)
     return
   }
 
   // Filter sessions with 'kimaki' in their directory
-  const kimakiSessions = sessionsResponse.data.filter((session) =>
+  const kimakiSessions = sessions.filter((session) =>
     session.directory.toLowerCase().includes('kimaki'),
   )
 
@@ -215,13 +221,12 @@ test('generate markdown from session with tools', async () => {
   for (const session of kimakiSessions.slice(0, 10)) {
     // Check first 10 sessions
     try {
-      const messages = await client.session.messages({
-        path: { id: session.id },
+      const { data: messages } = await client.session.messages({
+        sessionID: session.id,
+        directory: testDirectory,
       })
       if (
-        messages.data?.some((msg) =>
-          msg.parts?.some((part) => part.type === 'tool'),
-        )
+        messages?.some((msg) => msg.parts?.some((part) => part.type === 'tool'))
       ) {
         sessionWithTools = session
         console.log(`Found session with tools: ${session.id}`)
@@ -239,7 +244,7 @@ test('generate markdown from session with tools', async () => {
     sessionWithTools = kimakiSessions[0]
   }
 
-  const exporter = new ShareMarkdown(client)
+  const exporter = new ShareMarkdown(client, testDirectory)
   const markdown = await exporter.generate({
     sessionID: sessionWithTools!.id,
   })
@@ -252,7 +257,7 @@ test('generate markdown from session with tools', async () => {
 
 test('error handling for non-existent session', async () => {
   const sessionID = 'non-existent-session-' + Date.now()
-  const exporter = new ShareMarkdown(client)
+  const exporter = new ShareMarkdown(client, testDirectory)
 
   // Should throw error for non-existent session
   await expect(
@@ -263,16 +268,18 @@ test('error handling for non-existent session', async () => {
 })
 
 test('generate markdown from multiple sessions', async () => {
-  const sessionsResponse = await client.session.list()
+  const { data: sessions } = await client.session.list({
+    directory: testDirectory,
+  })
 
-  if (!sessionsResponse.data || sessionsResponse.data.length === 0) {
+  if (!sessions || sessions.length === 0) {
     console.warn('No existing sessions found')
     expect(true).toBe(true)
     return
   }
 
   // Filter sessions with 'kimaki' in their directory
-  const kimakiSessions = sessionsResponse.data.filter((session) =>
+  const kimakiSessions = sessions.filter((session) =>
     session.directory.toLowerCase().includes('kimaki'),
   )
 
@@ -283,10 +290,10 @@ test('generate markdown from multiple sessions', async () => {
   }
 
   console.log(
-    `Found ${kimakiSessions.length} kimaki sessions out of ${sessionsResponse.data.length} total sessions`,
+    `Found ${kimakiSessions.length} kimaki sessions out of ${sessions.length} total sessions`,
   )
 
-  const exporter = new ShareMarkdown(client)
+  const exporter = new ShareMarkdown(client, testDirectory)
 
   // Generate markdown for up to 3 kimaki sessions
   const sessionsToTest = Math.min(3, kimakiSessions.length)
@@ -314,45 +321,57 @@ test('generate markdown from multiple sessions', async () => {
 })
 
 // test for getCompactSessionContext - disabled in CI since it requires a specific session
-test.skipIf(process.env.CI)('getCompactSessionContext generates compact format', async () => {
-  const sessionId = 'ses_46c2205e8ffeOll1JUSuYChSAM'
+test.skipIf(process.env.CI)(
+  'getCompactSessionContext generates compact format',
+  async () => {
+    const sessionId = 'ses_46c2205e8ffeOll1JUSuYChSAM'
 
-  const context = await getCompactSessionContext({
-    client,
-    sessionId,
-    includeSystemPrompt: true,
-    maxMessages: 15,
-  })
+    const context = await getCompactSessionContext({
+      client,
+      directory: testDirectory,
+      sessionId,
+      includeSystemPrompt: true,
+      maxMessages: 15,
+    })
 
-  console.log(`Generated compact context length: ${context.length} characters`)
+    console.log(
+      `Generated compact context length: ${context.length} characters`,
+    )
 
-  expect(context).toBeTruthy()
-  expect(context.length).toBeGreaterThan(0)
-  // should have tool calls or messages
-  expect(context).toMatch(/\[Tool \w+\]:|\[User\]:|\[Assistant\]:/)
+    expect(context).toBeTruthy()
+    expect(context.length).toBeGreaterThan(0)
+    // should have tool calls or messages
+    expect(context).toMatch(/\[Tool \w+\]:|\[User\]:|\[Assistant\]:/)
 
-  await expect(context).toMatchFileSnapshot(
-    './__snapshots__/compact-session-context.md',
-  )
-})
+    await expect(context).toMatchFileSnapshot(
+      './__snapshots__/compact-session-context.md',
+    )
+  },
+)
 
-test.skipIf(process.env.CI)('getCompactSessionContext without system prompt', async () => {
-  const sessionId = 'ses_46c2205e8ffeOll1JUSuYChSAM'
+test.skipIf(process.env.CI)(
+  'getCompactSessionContext without system prompt',
+  async () => {
+    const sessionId = 'ses_46c2205e8ffeOll1JUSuYChSAM'
 
-  const context = await getCompactSessionContext({
-    client,
-    sessionId,
-    includeSystemPrompt: false,
-    maxMessages: 10,
-  })
+    const context = await getCompactSessionContext({
+      client,
+      directory: testDirectory,
+      sessionId,
+      includeSystemPrompt: false,
+      maxMessages: 10,
+    })
 
-  console.log(`Generated compact context (no system) length: ${context.length} characters`)
+    console.log(
+      `Generated compact context (no system) length: ${context.length} characters`,
+    )
 
-  expect(context).toBeTruthy()
-  // should NOT have system prompt
-  expect(context).not.toContain('[System Prompt]')
+    expect(context).toBeTruthy()
+    // should NOT have system prompt
+    expect(context).not.toContain('[System Prompt]')
 
-  await expect(context).toMatchFileSnapshot(
-    './__snapshots__/compact-session-context-no-system.md',
-  )
-})
+    await expect(context).toMatchFileSnapshot(
+      './__snapshots__/compact-session-context-no-system.md',
+    )
+  },
+)

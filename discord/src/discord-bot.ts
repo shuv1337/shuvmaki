@@ -3,7 +3,11 @@
 // and orchestrates the main event loop for the Kimaki bot.
 
 import { getDatabase, closeDatabase } from './database.js'
-import { initializeOpencodeForDirectory, getOpencodeServers } from './opencode.js'
+import {
+  initializeOpencodeForDirectory,
+  getOpencodeServers,
+  getOpencodeClientV2,
+} from './opencode.js'
 import {
   escapeBackticksInCodeBlocks,
   splitMarkdownForDiscord,
@@ -24,18 +28,23 @@ import {
   processVoiceAttachment,
   registerVoiceStateHandler,
 } from './voice-handler.js'
-import {
-  getCompactSessionContext,
-  getLastSessionId,
-} from './markdown.js'
+import { getCompactSessionContext, getLastSessionId } from './markdown.js'
 import { handleOpencodeSession } from './session-handler.js'
 import { registerInteractionHandler } from './interaction-handler.js'
 
 export { getDatabase, closeDatabase } from './database.js'
 export { initializeOpencodeForDirectory } from './opencode.js'
-export { escapeBackticksInCodeBlocks, splitMarkdownForDiscord } from './discord-utils.js'
+export {
+  escapeBackticksInCodeBlocks,
+  splitMarkdownForDiscord,
+} from './discord-utils.js'
 export { getOpencodeSystemMessage } from './system-message.js'
-export { ensureKimakiCategory, ensureKimakiAudioCategory, createProjectChannels, getChannelsWithDescriptions } from './channel-management.js'
+export {
+  ensureKimakiCategory,
+  ensureKimakiAudioCategory,
+  createProjectChannels,
+  getChannelsWithDescriptions,
+} from './channel-management.js'
 export type { ChannelWithTags } from './channel-management.js'
 
 import {
@@ -246,31 +255,36 @@ export async function startDiscordBot({
 
         if (projectDirectory) {
           try {
-            const getClient = await initializeOpencodeForDirectory(projectDirectory)
-            const client = getClient()
+            await initializeOpencodeForDirectory(projectDirectory)
+            const clientV2 = getOpencodeClientV2(projectDirectory)
 
-            // get current session context (without system prompt, it would be duplicated)
-            if (row.session_id) {
-              currentSessionContext = await getCompactSessionContext({
-                client,
-                sessionId: row.session_id,
-                includeSystemPrompt: false,
-                maxMessages: 15,
-              })
-            }
+            if (clientV2) {
+              // get current session context (without system prompt, it would be duplicated)
+              if (row.session_id) {
+                currentSessionContext = await getCompactSessionContext({
+                  client: clientV2,
+                  directory: projectDirectory,
+                  sessionId: row.session_id,
+                  includeSystemPrompt: false,
+                  maxMessages: 15,
+                })
+              }
 
-            // get last session context (with system prompt for project context)
-            const lastSessionId = await getLastSessionId({
-              client,
-              excludeSessionId: row.session_id,
-            })
-            if (lastSessionId) {
-              lastSessionContext = await getCompactSessionContext({
-                client,
-                sessionId: lastSessionId,
-                includeSystemPrompt: true,
-                maxMessages: 10,
+              // get last session context (with system prompt for project context)
+              const lastSessionId = await getLastSessionId({
+                client: clientV2,
+                directory: projectDirectory,
+                excludeSessionId: row.session_id,
               })
+              if (lastSessionId) {
+                lastSessionContext = await getCompactSessionContext({
+                  client: clientV2,
+                  directory: projectDirectory,
+                  sessionId: lastSessionId,
+                  includeSystemPrompt: true,
+                  maxMessages: 10,
+                })
+              }
             }
           } catch (e) {
             voiceLogger.error(`Could not get session context:`, e)
@@ -405,7 +419,10 @@ export async function startDiscordBot({
       voiceLogger.error('Discord handler error:', error)
       try {
         const errMsg = error instanceof Error ? error.message : String(error)
-        await message.reply({ content: `Error: ${errMsg}`, flags: SILENT_MESSAGE_FLAGS })
+        await message.reply({
+          content: `Error: ${errMsg}`,
+          flags: SILENT_MESSAGE_FLAGS,
+        })
       } catch {
         voiceLogger.error('Discord handler error (fallback):', error)
       }

@@ -23,6 +23,7 @@ import {
   initializeOpencodeForDirectory,
   getOpencodeSystemMessage,
 } from './discord-bot.js'
+import { getOpencodeClientV2 } from './opencode.js'
 
 export async function getTools({
   onMessageCompleted,
@@ -39,8 +40,15 @@ export async function getTools({
 }) {
   const getClient = await initializeOpencodeForDirectory(directory)
   const client = getClient()
+  const clientV2 = getOpencodeClientV2(directory)
 
-  const markdownRenderer = new ShareMarkdown(client)
+  if (!clientV2) {
+    throw new Error(
+      `OpenCode v2 client not available for directory: ${directory}`,
+    )
+  }
+
+  const markdownRenderer = new ShareMarkdown(clientV2, directory)
 
   const providersResponse = await client.config.providers({})
   const providers: Provider[] = providersResponse.data?.providers || []
@@ -134,7 +142,7 @@ export async function getTools({
           .optional()
           .describe('Optional model to use for this session'),
       }),
-      execute: async ({ message, title,  }) => {
+      execute: async ({ message, title }) => {
         if (!message.trim()) {
           throw new Error(`message must be a non empty string`)
         }
@@ -156,7 +164,9 @@ export async function getTools({
               path: { id: session.data.id },
               body: {
                 parts: [{ type: 'text', text: message }],
-                system: getOpencodeSystemMessage({ sessionId: session.data.id }),
+                system: getOpencodeSystemMessage({
+                  sessionId: session.data.id,
+                }),
               },
             })
             .then(async (response) => {

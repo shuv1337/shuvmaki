@@ -1084,8 +1084,18 @@
   {
     "category": "functional",
     "description": "Consider migrating `discord/src/markdown.ts` to v2 clients for consistency",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Updated ShareMarkdown class to accept OpencodeClientV2 and directory parameter",
+      "Updated session.get and session.messages calls to use v2 flat params style",
+      "Updated getCompactSessionContext to accept v2 client and directory",
+      "Updated getLastSessionId to accept v2 client and directory",
+      "Updated tools.ts to pass v2 client from getOpencodeClientV2()",
+      "Updated discord-bot.ts to pass v2 client to markdown functions",
+      "Updated markdown.test.ts to use v2 SDK imports and API style",
+      "Typecheck passes (only pre-existing vitest import errors in test files)"
+    ],
+    "passes": true,
+    "notes": "Full migration from OpencodeClient (v1) to OpencodeClientV2. Callers (tools.ts, discord-bot.ts) updated to pass v2 client. Tests updated to use v2 SDK pattern. Maintains consistency with session-handler.ts and other migrated modules."
   },
   {
     "category": "functional",

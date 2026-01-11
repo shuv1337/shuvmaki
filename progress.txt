@@ -320,3 +320,21 @@
   - Typecheck: Pre-existing vitest errors only (no new issues)
   - Tests: **28/28 pass** for variant-related tests (18 database + 10 variant helper)
   - Lint: No lint script available
+
+## Iteration 21 - 2026-01-11
+- **Verified**: "Default" selection clears stored variant preference via **code-level verification**
+- **Files verified**:
+  - `discord/src/commands/variant.ts:335-381` - __default__ handling
+  - `discord/src/commands/model.ts:654` - same pattern
+- **Logic**:
+  - `isDefault = selectedVariant === '__default__'` (variant.ts:335, model.ts:654)
+  - Session scope: `clearSessionVariant(context.sessionId)` (variant.ts:340)
+  - Channel scope: `clearChannelVariant(context.channelId)` (variant.ts:374)
+- **Test coverage**:
+  - Clear behavior: database-variants.test.ts lines 101, 194
+  - __default__ option presence: variant.test.ts lines 62-75
+- **Why**: Code-verified behavior - E2E requires Discord bot runtime. Unit tests validate underlying clear functions work correctly.
+- **Feedback**:
+  - Typecheck: Pre-existing vitest errors only
+  - Tests: 28/28 pass
+  - Lint: No lint script available

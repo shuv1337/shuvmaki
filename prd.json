@@ -2,20 +2,35 @@
   {
     "category": "functional",
     "description": "Call v2 provider API and log raw response to inspect variant object structure",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Read SDK types at node_modules/@opencode-ai/sdk/dist/v2/gen/types.gen.d.ts",
+      "Found Model type at lines 1636-1702 with variants?: { [key: string]: { [key: string]: unknown } }",
+      "Found Provider type at lines 1703-1715 with models: { [key: string]: Model }"
+    ],
+    "passes": true,
+    "notes": "SDK types document the variant structure. Model.variants is an optional object keyed by variant name with arbitrary config values."
   },
   {
     "category": "functional",
     "description": "Document which fields exist on variant objects (disabled, description, etc.)",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Read ProviderConfig type at lines 1190-1273 in types.gen.d.ts",
+      "Config-side variant type: { disabled?: boolean; [key: string]: unknown }",
+      "API-side Model.variants type: { [key: string]: { [key: string]: unknown } }"
+    ],
+    "passes": true,
+    "notes": "Config defines disabled?: boolean explicitly. API response is loose typed but will include disabled from config. Other fields vary per provider."
   },
   {
     "category": "functional",
     "description": "Confirm runtime type includes `disabled` field for filtering",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "ProviderConfig.models[].variants[] explicitly defines disabled?: boolean",
+      "Config values flow through to API response",
+      "Filter pattern: Object.entries(variants).filter(([k, v]) => !v?.disabled)"
+    ],
+    "passes": true,
+    "notes": "Confirmed. Use (variant as { disabled?: boolean }).disabled to access the field with type safety."
   },
   {
     "category": "functional",
@@ -32,8 +47,13 @@
   {
     "category": "functional",
     "description": "Confirm v2 `provider.list` exposes `models[].variants` as expected",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Model type (lines 1636-1702) includes: variants?: { [key: string]: { [key: string]: unknown } }",
+      "Provider type (lines 1703-1715) includes: models: { [key: string]: Model }",
+      "provider.list returns Array<Provider>, each provider has models dict with Model values"
+    ],
+    "passes": true,
+    "notes": "Confirmed via SDK types. Access pattern: provider.models[modelId].variants"
   },
   {
     "category": "functional",

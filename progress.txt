@@ -57,3 +57,17 @@
   - Typecheck: Passes for source (test files have pre-existing vitest dep issue)
   - Tests: Pre-existing snapshot mismatches (formatting diffs, unrelated to changes)
   - Lint: No lint script in package.json
+
+## Iteration 5 - 2026-01-11
+- **Documented**: Variant API structure from SDK types (tasks 1-3, 5)
+- **File**: `discord/node_modules/@opencode-ai/sdk/dist/v2/gen/types.gen.d.ts`
+- **Findings**:
+  - **Model.variants** (lines 1697-1701): `{ [key: string]: { [key: string]: unknown } }`
+  - **ProviderConfig.models[].variants** (lines 1242-1251): `{ [key: string]: { disabled?: boolean; [key: string]: unknown } }`
+  - **Provider.models** (line 1712-1714): `{ [key: string]: Model }`
+- **Why**: Research unblocks all variant filtering/selection implementation
+- **Actionable pattern**: `Object.entries(variants).filter(([k, v]) => !(v as { disabled?: boolean }).disabled)`
+- **Feedback**:
+  - Typecheck: Pre-existing vitest errors only
+  - Tests: Pre-existing snapshot mismatches
+  - Lint: No lint script available

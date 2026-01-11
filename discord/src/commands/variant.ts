@@ -31,19 +31,35 @@ import { createLogger } from '../logger.js'
 
 const variantLogger = createLogger('VARIANT')
 
+// TTL for pending variant selection contexts (5 minutes)
+const PENDING_CONTEXT_TTL_MS = 5 * 60 * 1000
+
+type VariantContext = {
+  dir: string
+  channelId: string
+  sessionId?: string
+  isThread: boolean
+  thread?: ThreadChannel
+  modelId: string
+  createdAt: number
+}
+
 // Store pending variant selection contexts by hash
-// TODO: Add TTL cleanup - technical debt for memory management
-const pendingVariantContexts = new Map<
-  string,
-  {
-    dir: string
-    channelId: string
-    sessionId?: string
-    isThread: boolean
-    thread?: ThreadChannel
-    modelId: string
+const pendingVariantContexts = new Map<string, VariantContext>()
+
+/**
+ * Clean up expired pending contexts.
+ * Called before adding new contexts to prevent unbounded memory growth.
+ */
+function cleanupExpiredContexts(): void {
+  const now = Date.now()
+  for (const [hash, context] of pendingVariantContexts) {
+    if (now - context.createdAt > PENDING_CONTEXT_TTL_MS) {
+      pendingVariantContexts.delete(hash)
+      variantLogger.log(`[VARIANT] Cleaned up expired context: ${hash}`)
+    }
   }
->()
+}
 
 /**
  * Build variant options from model metadata.
@@ -241,13 +257,17 @@ export async function handleVariantCommand({
       return
     }
 
-    const context = {
+    // Clean up expired contexts before adding new one
+    cleanupExpiredContexts()
+
+    const context: VariantContext = {
       dir: projectDirectory,
       channelId: targetChannelId,
       sessionId,
       isThread,
       thread: isThread ? (channel as ThreadChannel) : undefined,
       modelId: currentModel,
+      createdAt: Date.now(),
     }
     const contextHash = crypto.randomBytes(8).toString('hex')
     pendingVariantContexts.set(contextHash, context)
@@ -290,7 +310,11 @@ export async function handleVariantSelectMenu(
   const contextHash = customId.replace('variant_select:', '')
   const context = pendingVariantContexts.get(contextHash)
 
-  if (!context) {
+  // Check if context exists and is not expired
+  if (!context || Date.now() - context.createdAt > PENDING_CONTEXT_TTL_MS) {
+    if (context) {
+      pendingVariantContexts.delete(contextHash)
+    }
     await interaction.editReply({
       content: 'Selection expired. Please run /variant again.',
       components: [],

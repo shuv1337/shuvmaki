@@ -30,36 +30,58 @@ import { createLogger } from '../logger.js'
 
 const modelLogger = createLogger('MODEL')
 
+// TTL for pending selection contexts (5 minutes)
+const PENDING_CONTEXT_TTL_MS = 5 * 60 * 1000
+
+type ModelContext = {
+  dir: string
+  channelId: string
+  sessionId?: string
+  isThread: boolean
+  providerId?: string
+  providerName?: string
+  thread?: ThreadChannel
+  createdAt: number
+}
+
+type ModelVariantContext = {
+  dir: string
+  channelId: string
+  sessionId?: string
+  isThread: boolean
+  providerId: string
+  providerName: string
+  modelId: string
+  modelName: string
+  thread?: ThreadChannel
+  createdAt: number
+}
+
 // Store context by hash to avoid customId length limits (Discord max: 100 chars)
-const pendingModelContexts = new Map<
-  string,
-  {
-    dir: string
-    channelId: string
-    sessionId?: string
-    isThread: boolean
-    providerId?: string
-    providerName?: string
-    thread?: ThreadChannel
-  }
->()
+const pendingModelContexts = new Map<string, ModelContext>()
 
 // Store context for model variant selection (shown after model is selected if variants exist)
-// TODO: Add TTL cleanup - technical debt for memory management
-const pendingModelVariantContexts = new Map<
-  string,
-  {
-    dir: string
-    channelId: string
-    sessionId?: string
-    isThread: boolean
-    providerId: string
-    providerName: string
-    modelId: string
-    modelName: string
-    thread?: ThreadChannel
+const pendingModelVariantContexts = new Map<string, ModelVariantContext>()
+
+/**
+ * Clean up expired pending contexts from both Maps.
+ * Called before adding new contexts to prevent unbounded memory growth.
+ */
+function cleanupExpiredContexts(): void {
+  const now = Date.now()
+  for (const [hash, context] of pendingModelContexts) {
+    if (now - context.createdAt > PENDING_CONTEXT_TTL_MS) {
+      pendingModelContexts.delete(hash)
+      modelLogger.log(`[MODEL] Cleaned up expired model context: ${hash}`)
+    }
   }
->()
+  for (const [hash, context] of pendingModelVariantContexts) {
+    if (now - context.createdAt > PENDING_CONTEXT_TTL_MS) {
+      pendingModelVariantContexts.delete(hash)
+      modelLogger.log(`[MODEL] Cleaned up expired variant context: ${hash}`)
+    }
+  }
+}
 
 export type ProviderInfo = {
   id: string
@@ -230,13 +252,17 @@ export async function handleModelCommand({
       return
     }
 
+    // Clean up expired contexts before adding new one
+    cleanupExpiredContexts()
+
     // Store context with a short hash key to avoid customId length limits
-    const context = {
+    const context: ModelContext = {
       dir: projectDirectory,
       channelId: targetChannelId,
       sessionId: sessionId,
       isThread: isThread,
       thread: isThread ? (channel as ThreadChannel) : undefined,
+      createdAt: Date.now(),
     }
     const contextHash = crypto.randomBytes(8).toString('hex')
     pendingModelContexts.set(contextHash, context)
@@ -293,7 +319,11 @@ export async function handleProviderSelectMenu(
   const contextHash = customId.replace('model_provider:', '')
   const context = pendingModelContexts.get(contextHash)
 
-  if (!context) {
+  // Check if context exists and is not expired
+  if (!context || Date.now() - context.createdAt > PENDING_CONTEXT_TTL_MS) {
+    if (context) {
+      pendingModelContexts.delete(contextHash)
+    }
     await interaction.editReply({
       content: 'Selection expired. Please run /model again.',
       components: [],
@@ -426,7 +456,16 @@ export async function handleModelSelectMenu(
   const contextHash = customId.replace('model_select:', '')
   const context = pendingModelContexts.get(contextHash)
 
-  if (!context || !context.providerId || !context.providerName) {
+  // Check if context exists, has required fields, and is not expired
+  if (
+    !context ||
+    !context.providerId ||
+    !context.providerName ||
+    Date.now() - context.createdAt > PENDING_CONTEXT_TTL_MS
+  ) {
+    if (context) {
+      pendingModelContexts.delete(contextHash)
+    }
     await interaction.editReply({
       content: 'Selection expired. Please run /model again.',
       components: [],
@@ -486,7 +525,7 @@ export async function handleModelSelectMenu(
     if (hasEnabledVariants) {
       // Model has variants - show variant picker
       const variantContextHash = crypto.randomBytes(8).toString('hex')
-      pendingModelVariantContexts.set(variantContextHash, {
+      const variantContext: ModelVariantContext = {
         dir: context.dir,
         channelId: context.channelId,
         sessionId: context.sessionId,
@@ -496,7 +535,9 @@ export async function handleModelSelectMenu(
         modelId: selectedModelId,
         modelName,
         thread: context.thread,
-      })
+        createdAt: Date.now(),
+      }
+      pendingModelVariantContexts.set(variantContextHash, variantContext)
 
       const selectMenu = new StringSelectMenuBuilder()
         .setCustomId(`model_variant:${variantContextHash}`)
@@ -587,7 +628,11 @@ export async function handleModelVariantSelectMenu(
   const contextHash = customId.replace('model_variant:', '')
   const context = pendingModelVariantContexts.get(contextHash)
 
-  if (!context) {
+  // Check if context exists and is not expired
+  if (!context || Date.now() - context.createdAt > PENDING_CONTEXT_TTL_MS) {
+    if (context) {
+      pendingModelVariantContexts.delete(contextHash)
+    }
     await interaction.editReply({
       content: 'Selection expired. Please run /model again.',
       components: [],

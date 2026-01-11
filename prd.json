@@ -1070,8 +1070,16 @@
   {
     "category": "functional",
     "description": "Add TTL cleanup for pending context Maps across all commands",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Added createdAt field to all pending context types",
+      "Added PENDING_CONTEXT_TTL_MS = 5 * 60 * 1000 (5 minutes)",
+      "Added cleanupExpiredContexts() function to variant.ts, model.ts, agent.ts",
+      "Call cleanupExpiredContexts() before adding new contexts",
+      "Added expiration check when retrieving contexts (delete if expired)",
+      "Files modified: variant.ts, model.ts, agent.ts"
+    ],
+    "passes": true,
+    "notes": "TTL cleanup prevents unbounded memory growth from abandoned select menus. Cleanup runs on new context creation and retrieval. 5-minute TTL is generous for Discord interactions."
   },
   {
     "category": "functional",

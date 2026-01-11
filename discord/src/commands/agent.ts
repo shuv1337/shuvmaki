@@ -10,19 +10,44 @@ import {
   type TextChannel,
 } from 'discord.js'
 import crypto from 'node:crypto'
-import { getDatabase, setChannelAgent, setSessionAgent, runModelMigrations } from '../database.js'
+import {
+  getDatabase,
+  setChannelAgent,
+  setSessionAgent,
+  runModelMigrations,
+} from '../database.js'
 import { initializeOpencodeForDirectory } from '../opencode.js'
 import { resolveTextChannel, getKimakiMetadata } from '../discord-utils.js'
 import { createLogger } from '../logger.js'
 
 const agentLogger = createLogger('AGENT')
 
-const pendingAgentContexts = new Map<string, {
+// TTL for pending agent selection contexts (5 minutes)
+const PENDING_CONTEXT_TTL_MS = 5 * 60 * 1000
+
+type AgentContext = {
   dir: string
   channelId: string
   sessionId?: string
   isThread: boolean
-}>()
+  createdAt: number
+}
+
+const pendingAgentContexts = new Map<string, AgentContext>()
+
+/**
+ * Clean up expired pending contexts.
+ * Called before adding new contexts to prevent unbounded memory growth.
+ */
+function cleanupExpiredContexts(): void {
+  const now = Date.now()
+  for (const [hash, context] of pendingAgentContexts) {
+    if (now - context.createdAt > PENDING_CONTEXT_TTL_MS) {
+      pendingAgentContexts.delete(hash)
+      agentLogger.log(`[AGENT] Cleaned up expired context: ${hash}`)
+    }
+  }
+}
 
 export async function handleAgentCommand({
   interaction,
@@ -38,7 +63,9 @@ export async function handleAgentCommand({
   const channel = interaction.channel
 
   if (!channel) {
-    await interaction.editReply({ content: 'This command can only be used in a channel' })
+    await interaction.editReply({
+      content: 'This command can only be used in a channel',
+    })
     return
   }
 
@@ -72,17 +99,23 @@ export async function handleAgentCommand({
     channelAppId = metadata.channelAppId
     targetChannelId = channel.id
   } else {
-    await interaction.editReply({ content: 'This command can only be used in text channels or threads' })
+    await interaction.editReply({
+      content: 'This command can only be used in text channels or threads',
+    })
     return
   }
 
   if (channelAppId && channelAppId !== appId) {
-    await interaction.editReply({ content: 'This channel is not configured for this bot' })
+    await interaction.editReply({
+      content: 'This channel is not configured for this bot',
+    })
     return
   }
 
   if (!projectDirectory) {
-    await interaction.editReply({ content: 'This channel is not configured with a project directory' })
+    await interaction.editReply({
+      content: 'This channel is not configured with a project directory',
+    })
     return
   }
 
@@ -107,13 +140,18 @@ export async function handleAgentCommand({
       return
     }
 
+    // Clean up expired contexts before adding new one
+    cleanupExpiredContexts()
+
     const contextHash = crypto.randomBytes(8).toString('hex')
-    pendingAgentContexts.set(contextHash, {
+    const context: AgentContext = {
       dir: projectDirectory,
       channelId: targetChannelId,
       sessionId,
       isThread,
-    })
+      createdAt: Date.now(),
+    }
+    pendingAgentContexts.set(contextHash, context)
 
     const options = agents.map((agent) => ({
       label: agent.name.slice(0, 100),
@@ -126,7 +164,8 @@ export async function handleAgentCommand({
       .setPlaceholder('Select an agent')
       .addOptions(options)
 
-    const actionRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(selectMenu)
+    const actionRow =
+      new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(selectMenu)
 
     await interaction.editReply({
       content: '**Set Agent Preference**\nSelect an agent:',
@@ -141,7 +180,7 @@ export async function handleAgentCommand({
 }
 
 export async function handleAgentSelectMenu(
-  interaction: StringSelectMenuInteraction
+  interaction: StringSelectMenuInteraction,
 ): Promise<void> {
   const customId = interaction.customId
 
@@ -154,7 +193,11 @@ export async function handleAgentSelectMenu(
   const contextHash = customId.replace('agent_select:', '')
   const context = pendingAgentContexts.get(contextHash)
 
-  if (!context) {
+  // Check if context exists and is not expired
+  if (!context || Date.now() - context.createdAt > PENDING_CONTEXT_TTL_MS) {
+    if (context) {
+      pendingAgentContexts.delete(contextHash)
+    }
     await interaction.editReply({
       content: 'Selection expired. Please run /agent again.',
       components: [],
@@ -174,7 +217,9 @@ export async function handleAgentSelectMenu(
   try {
     if (context.isThread && context.sessionId) {
       setSessionAgent(context.sessionId, selectedAgent)
-      agentLogger.log(`Set agent ${selectedAgent} for session ${context.sessionId}`)
+      agentLogger.log(
+        `Set agent ${selectedAgent} for session ${context.sessionId}`,
+      )
 
       await interaction.editReply({
         content: `Agent preference set for this session: **${selectedAgent}**`,
@@ -182,7 +227,9 @@ export async function handleAgentSelectMenu(
       })
     } else {
       setChannelAgent(context.channelId, selectedAgent)
-      agentLogger.log(`Set agent ${selectedAgent} for channel ${context.channelId}`)
+      agentLogger.log(
+        `Set agent ${selectedAgent} for channel ${context.channelId}`,
+      )
 
       await interaction.editReply({
         content: `Agent preference set for this channel: **${selectedAgent}**\n\nAll new sessions in this channel will use this agent.`,

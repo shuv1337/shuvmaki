@@ -201,3 +201,21 @@
   - Typecheck: Source compiles clean (pre-existing vitest errors in test files only)
   - Tests: Pre-existing snapshot mismatches (unrelated to changes)
   - Lint: No lint script available
+
+## Iteration 14 - 2026-01-11
+- **Implemented**: **TTL cleanup** for pending context Maps
+- **Files**:
+  - `discord/src/commands/variant.ts`: Added createdAt, cleanupExpiredContexts(), expiration checks
+  - `discord/src/commands/model.ts`: Added createdAt, cleanupExpiredContexts(), expiration checks
+  - `discord/src/commands/agent.ts`: Added createdAt, cleanupExpiredContexts(), expiration checks
+- **Changes**:
+  - Added `PENDING_CONTEXT_TTL_MS = 5 * 60 * 1000` (5 minutes) to all files
+  - Added `createdAt: number` field to all context types
+  - Added `cleanupExpiredContexts()` that iterates and deletes expired entries
+  - Called cleanup before adding new contexts (prevents unbounded growth)
+  - Added expiration check when retrieving contexts (deletes if expired)
+- **Why**: **Memory leak prevention** - Discord select menus that are never interacted with would leave contexts in Maps forever. Long-running bot stability requires bounded memory.
+- **Feedback**:
+  - Typecheck: Source compiles clean (pre-existing vitest errors in test files only)
+  - Tests: xml.test.ts passes
+  - Lint: No lint script available

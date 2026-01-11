@@ -85,3 +85,19 @@
   - Typecheck: Source compiles clean (pre-existing vitest errors in test files only)
   - Tests: Pre-existing snapshot mismatches (unrelated)
   - Lint: No lint script available
+
+## Iteration 7 - 2026-01-11
+- **Migrated**: `/model` command from **v1 to v2 SDK** for provider listing
+- **File**: `discord/src/commands/model.ts`
+- **Changes**:
+  - Added `getOpencodeClientV2` import from `../opencode.js`
+  - Replaced two `getClient().provider.list({ query: { directory } })` calls with v2 pattern
+  - `handleModelCommand` (lines 138-151): Uses `clientV2.provider.list({ directory })`
+  - `handleProviderSelectMenu` (lines 257-271): Uses same v2 pattern
+  - Added proper error handling via `{ data, error }` destructuring
+  - Added null check for v2 client with user-friendly error message
+- **Why**: High-risk/high-impact - `/model` is core user interaction, v2 migration enables variant support. Blocking downstream variant selection features.
+- **Feedback**:
+  - Typecheck: Source compiles clean (pre-existing vitest errors in test files only)
+  - Tests: Pre-existing snapshot mismatches (unrelated to changes)
+  - Lint: No lint script available

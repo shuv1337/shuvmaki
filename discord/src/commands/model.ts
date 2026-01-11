@@ -10,8 +10,16 @@ import {
   type TextChannel,
 } from 'discord.js'
 import crypto from 'node:crypto'
-import { getDatabase, setChannelModel, setSessionModel, runModelMigrations } from '../database.js'
-import { initializeOpencodeForDirectory } from '../opencode.js'
+import {
+  getDatabase,
+  setChannelModel,
+  setSessionModel,
+  runModelMigrations,
+} from '../database.js'
+import {
+  initializeOpencodeForDirectory,
+  getOpencodeClientV2,
+} from '../opencode.js'
 import { resolveTextChannel, getKimakiMetadata } from '../discord-utils.js'
 import { abortAndRetrySession } from '../session-handler.js'
 import { createLogger } from '../logger.js'
@@ -19,15 +27,18 @@ import { createLogger } from '../logger.js'
 const modelLogger = createLogger('MODEL')
 
 // Store context by hash to avoid customId length limits (Discord max: 100 chars)
-const pendingModelContexts = new Map<string, {
-  dir: string
-  channelId: string
-  sessionId?: string
-  isThread: boolean
-  providerId?: string
-  providerName?: string
-  thread?: ThreadChannel
-}>()
+const pendingModelContexts = new Map<
+  string,
+  {
+    dir: string
+    channelId: string
+    sessionId?: string
+    isThread: boolean
+    providerId?: string
+    providerName?: string
+    thread?: ThreadChannel
+  }
+>()
 
 export type ProviderInfo = {
   id: string
@@ -124,20 +135,30 @@ export async function handleModelCommand({
   }
 
   try {
-    const getClient = await initializeOpencodeForDirectory(projectDirectory)
+    await initializeOpencodeForDirectory(projectDirectory)
+    const clientV2 = getOpencodeClientV2(projectDirectory)
 
-    const providersResponse = await getClient().provider.list({
-      query: { directory: projectDirectory },
-    })
+    if (!clientV2) {
+      await interaction.editReply({
+        content: 'Failed to connect to OpenCode server',
+      })
+      return
+    }
 
-    if (!providersResponse.data) {
+    const { data: providersData, error: providersError } =
+      await clientV2.provider.list({
+        directory: projectDirectory,
+      })
+
+    if (providersError || !providersData) {
+      modelLogger.error('[MODEL] Failed to fetch providers:', providersError)
       await interaction.editReply({
         content: 'Failed to fetch providers',
       })
       return
     }
 
-    const { all: allProviders, connected } = providersResponse.data
+    const { all: allProviders, connected } = providersData
 
     // Filter to only connected providers (have credentials)
     const availableProviders = allProviders.filter((p) => {
@@ -168,7 +189,11 @@ export async function handleModelCommand({
       return {
         label: provider.name.slice(0, 100),
         value: provider.id,
-        description: `${modelCount} model${modelCount !== 1 ? 's' : ''} available`.slice(0, 100),
+        description:
+          `${modelCount} model${modelCount !== 1 ? 's' : ''} available`.slice(
+            0,
+            100,
+          ),
       }
     })
 
@@ -177,7 +202,8 @@ export async function handleModelCommand({
       .setPlaceholder('Select a provider')
       .addOptions(options)
 
-    const actionRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(selectMenu)
+    const actionRow =
+      new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(selectMenu)
 
     await interaction.editReply({
       content: '**Set Model Preference**\nSelect a provider:',
@@ -196,7 +222,7 @@ export async function handleModelCommand({
  * Shows a second select menu with models for the chosen provider.
  */
 export async function handleProviderSelectMenu(
-  interaction: StringSelectMenuInteraction
+  interaction: StringSelectMenuInteraction,
 ): Promise<void> {
   const customId = interaction.customId
 
@@ -228,13 +254,24 @@ export async function handleProviderSelectMenu(
   }
 
   try {
-    const getClient = await initializeOpencodeForDirectory(context.dir)
+    await initializeOpencodeForDirectory(context.dir)
+    const clientV2 = getOpencodeClientV2(context.dir)
 
-    const providersResponse = await getClient().provider.list({
-      query: { directory: context.dir },
-    })
+    if (!clientV2) {
+      await interaction.editReply({
+        content: 'Failed to connect to OpenCode server',
+        components: [],
+      })
+      return
+    }
 
-    if (!providersResponse.data) {
+    const { data: providersData, error: providersError } =
+      await clientV2.provider.list({
+        directory: context.dir,
+      })
+
+    if (providersError || !providersData) {
+      modelLogger.error('[MODEL] Failed to fetch providers:', providersError)
       await interaction.editReply({
         content: 'Failed to fetch providers',
         components: [],
@@ -242,7 +279,7 @@ export async function handleProviderSelectMenu(
       return
     }
 
-    const provider = providersResponse.data.all.find((p) => p.id === selectedProviderId)
+    const provider = providersData.all.find((p) => p.id === selectedProviderId)
 
     if (!provider) {
       await interaction.editReply({
@@ -297,7 +334,8 @@ export async function handleProviderSelectMenu(
       .setPlaceholder('Select a model')
       .addOptions(options)
 
-    const actionRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(selectMenu)
+    const actionRow =
+      new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(selectMenu)
 
     await interaction.editReply({
       content: `**Set Model Preference**\nProvider: **${provider.name}**\nSelect a model:`,
@@ -317,7 +355,7 @@ export async function handleProviderSelectMenu(
  * Stores the model preference in the database.
  */
 export async function handleModelSelectMenu(
-  interaction: StringSelectMenuInteraction
+  interaction: StringSelectMenuInteraction,
 ): Promise<void> {
   const customId = interaction.customId
 
@@ -356,7 +394,9 @@ export async function handleModelSelectMenu(
     if (context.isThread && context.sessionId) {
       // Store for session
       setSessionModel(context.sessionId, fullModelId)
-      modelLogger.log(`Set model ${fullModelId} for session ${context.sessionId}`)
+      modelLogger.log(
+        `Set model ${fullModelId} for session ${context.sessionId}`,
+      )
 
       // Check if there's a running request and abort+retry with new model
       let retried = false
@@ -382,7 +422,9 @@ export async function handleModelSelectMenu(
     } else {
       // Store for channel
       setChannelModel(context.channelId, fullModelId)
-      modelLogger.log(`Set model ${fullModelId} for channel ${context.channelId}`)
+      modelLogger.log(
+        `Set model ${fullModelId} for channel ${context.channelId}`,
+      )
 
       await interaction.editReply({
         content: `Model preference set for this channel:\n**${context.providerName}** / **${selectedModelId}**\n\n\`${fullModelId}\`\n\nAll new sessions in this channel will use this model.`,

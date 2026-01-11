@@ -496,38 +496,58 @@
   {
     "category": "functional",
     "description": "Open `discord/src/commands/model.ts`",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": ["Read file to understand current v1 implementation"],
+    "passes": true,
+    "notes": "File uses v1 getClient().provider.list in handleModelCommand (line 129) and handleProviderSelectMenu (line 233)"
   },
   {
     "category": "functional",
     "description": "Import `getOpencodeClientV2` from opencode.ts",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": ["Added import from '../opencode.js'"],
+    "passes": true,
+    "notes": "Import added at line 21 alongside initializeOpencodeForDirectory"
   },
   {
     "category": "functional",
     "description": "Locate the v1 `getClient().provider.list` call",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Found two calls: handleModelCommand (line 129) and handleProviderSelectMenu (line 233)"
+    ],
+    "passes": true,
+    "notes": "Both used v1 style: getClient().provider.list({ query: { directory } })"
   },
   {
     "category": "functional",
     "description": "Replace with v2 client call: `clientV2.provider.list({ directory })`",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Replaced both v1 calls with v2 pattern",
+      "handleModelCommand: lines 138-151",
+      "handleProviderSelectMenu: lines 257-271",
+      "Uses { data, error } destructuring pattern"
+    ],
+    "passes": true,
+    "notes": "v2 uses flat params: clientV2.provider.list({ directory }) - no nested query object"
   },
   {
     "category": "functional",
     "description": "Update any type references for the provider response",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Changed providersResponse.data to providersData (destructured)",
+      "Added error handling via providersError"
+    ],
+    "passes": true,
+    "notes": "v2 response structure: { data, error } - data contains { all, connected }"
   },
   {
     "category": "functional",
     "description": "Ensure provider/model selection logic works with v2 response structure",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Verified providersData.all and providersData.connected access patterns",
+      "Provider models access (provider.models) unchanged",
+      "Typecheck passes for source code"
+    ],
+    "passes": true,
+    "notes": "v2 provider response structure matches v1 data structure - only wrapper changed"
   },
   {
     "category": "functional",

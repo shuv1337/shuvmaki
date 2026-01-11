@@ -115,3 +115,23 @@
   - Typecheck: Source compiles clean (pre-existing vitest errors in test files only)
   - Tests: Pre-existing snapshot mismatches (unrelated)
   - Lint: No lint script available
+
+## Iteration 9 - 2026-01-11
+- **Created**: `/variant` command implementation
+- **File**: `discord/src/commands/variant.ts` (new file, 316 lines)
+- **Changes**:
+  - `handleVariantCommand`: Shows variant picker for current model
+    - Looks up model preference (session → channel fallback)
+    - Fetches variants via v2 SDK, filters disabled, limits to 24+Default
+    - Creates select menu with `variant_select:{hash}` customId
+  - `handleVariantSelectMenu`: Handles variant selection
+    - Persists to session or channel scope
+    - Clears variant on "Default" selection
+    - Calls `abortAndRetrySession` for immediate effect
+  - `buildVariantOptions`: Helper to build options list
+  - `pendingVariantContexts`: Map for pending selections (TODO: TTL cleanup)
+- **Why**: Core `/variant` command - **high-impact feature** enabling users to select model variants (thinking modes, etc). Pattern follows existing agent.ts/model.ts structure.
+- **Feedback**:
+  - Typecheck: Source compiles clean (pre-existing vitest errors in test files only)
+  - Tests: Pre-existing snapshot mismatches (unrelated)
+  - Lint: No lint script available

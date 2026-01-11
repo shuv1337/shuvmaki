@@ -241,14 +241,18 @@
   {
     "category": "functional",
     "description": "Open `discord/src/database.ts`",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": ["Read file to review existing structure and variant functions"],
+    "passes": true,
+    "notes": "File already has variant tables and helper functions from previous iteration"
   },
   {
     "category": "functional",
     "description": "Locate the `runModelMigrations` function",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Found at lines 83-139, includes channel_variants and session_variants table creation"
+    ],
+    "passes": true,
+    "notes": "Function already includes variant table migrations"
   },
   {
     "category": "functional",
@@ -322,176 +326,205 @@
   {
     "category": "functional",
     "description": "Create new file `discord/src/commands/variant.ts`",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": ["Created file with full /variant command implementation"],
+    "passes": true,
+    "notes": "File created with handleVariantCommand and handleVariantSelectMenu functions"
   },
   {
     "category": "functional",
     "description": "Add imports: discord.js types, database helpers, opencode client, logger",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": ["Added imports at lines 4-30"],
+    "passes": true,
+    "notes": "Imports: discord.js, crypto, database helpers, opencode client, discord-utils, session-handler, logger"
   },
   {
     "category": "functional",
     "description": "Create `pendingVariantContexts` Map for storing pending selection contexts",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": ["Created Map at lines 34-44"],
+    "passes": true,
+    "notes": "Map stores dir, channelId, sessionId, isThread, thread, modelId"
   },
   {
     "category": "functional",
     "description": "Add TODO comment about TTL cleanup being technical debt",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": ["Added TODO comment at line 33"],
+    "passes": true,
+    "notes": "Comment: TODO: Add TTL cleanup - technical debt for memory management"
   },
   {
     "category": "functional",
     "description": "Create `handleVariantCommand` function with signature matching agent.ts pattern",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": ["Created function at lines 75-230"],
+    "passes": true,
+    "notes": "Function signature: handleVariantCommand({ interaction, appId })"
   },
   {
     "category": "functional",
     "description": "In handleVariantCommand: get channel ID and session ID from interaction",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": ["Implemented at lines 96-120"],
+    "passes": true,
+    "notes": "Handles threads vs text channels, queries thread_sessions table for sessionId"
   },
   {
     "category": "functional",
     "description": "In handleVariantCommand: look up current model preference (session then channel)",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": ["Implemented at lines 141-145"],
+    "passes": true,
+    "notes": "Uses getSessionModel() || getChannelModel() fallback pattern"
   },
   {
     "category": "functional",
     "description": "In handleVariantCommand: if no model set, reply \"No model preference set. Run `/model` first.\"",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": ["Implemented at lines 147-152"],
+    "passes": true,
+    "notes": "Returns early with user-friendly message"
   },
   {
     "category": "functional",
     "description": "In handleVariantCommand: fetch model metadata via v2 client to get variants",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": ["Implemented at lines 163-196"],
+    "passes": true,
+    "notes": "Uses clientV2.provider.list(), finds provider/model, accesses model.variants"
   },
   {
     "category": "functional",
     "description": "In handleVariantCommand: if no variants exist, reply \"No variants available for [model name].\"",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": ["Implemented at lines 198-203"],
+    "passes": true,
+    "notes": "Checks model.variants existence and length"
   },
   {
     "category": "functional",
     "description": "Create helper function to build variant options list from metadata",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": ["Created buildVariantOptions() at lines 46-72"],
+    "passes": true,
+    "notes": "Filters, sorts, limits, adds Default option"
   },
   {
     "category": "functional",
     "description": "In variant options helper: filter out variants where `disabled === true`",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": ["Implemented at lines 51-53"],
+    "passes": true,
+    "notes": "Uses .filter() with disabled check cast to { disabled?: boolean }"
   },
   {
     "category": "functional",
     "description": "In variant options helper: sort variants alphabetically by key name",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": ["Implemented at lines 54-56"],
+    "passes": true,
+    "notes": "Uses .sort() with localeCompare"
   },
   {
     "category": "functional",
     "description": "In variant options helper: take first 24 variants",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": ["Implemented at line 57"],
+    "passes": true,
+    "notes": "Uses .slice(0, 24) to leave room for Default option"
   },
   {
     "category": "functional",
     "description": "In variant options helper: add \"Default\" option at the end (value: `__default__`)",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": ["Implemented at lines 68-72"],
+    "passes": true,
+    "notes": "Adds { label: 'Default', value: '__default__', description: ... }"
   },
   {
     "category": "functional",
     "description": "In handleVariantCommand: create StringSelectMenuBuilder with variant options",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": ["Implemented at lines 215-219"],
+    "passes": true,
+    "notes": "Uses StringSelectMenuBuilder().setCustomId().setPlaceholder().addOptions()"
   },
   {
     "category": "functional",
     "description": "In handleVariantCommand: store context in `pendingVariantContexts` Map with hash key",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": ["Implemented at lines 205-213"],
+    "passes": true,
+    "notes": "Uses crypto.randomBytes(8).toString('hex') for hash"
   },
   {
     "category": "functional",
     "description": "In handleVariantCommand: send select menu to user with customId `variant_select:{hash}`",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": ["Implemented at lines 215-226"],
+    "passes": true,
+    "notes": "customId format: variant_select:{contextHash}"
   },
   {
     "category": "functional",
     "description": "Create `handleVariantSelectMenu` function in variant.ts",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": ["Created function at lines 235-316"],
+    "passes": true,
+    "notes": "Handles StringSelectMenuInteraction for variant selection"
   },
   {
     "category": "functional",
     "description": "In handleVariantSelectMenu: extract context hash from customId",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": ["Implemented at line 244"],
+    "passes": true,
+    "notes": "Uses customId.replace('variant_select:', '')"
   },
   {
     "category": "functional",
     "description": "In handleVariantSelectMenu: retrieve context from `pendingVariantContexts` Map",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": ["Implemented at line 245"],
+    "passes": true,
+    "notes": "Uses pendingVariantContexts.get(contextHash)"
   },
   {
     "category": "functional",
     "description": "In handleVariantSelectMenu: if no context found, reply with error",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": ["Implemented at lines 247-253"],
+    "passes": true,
+    "notes": "Returns 'Selection expired. Please run /variant again.'"
   },
   {
     "category": "functional",
     "description": "In handleVariantSelectMenu: get selected variant value from interaction",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": ["Implemented at line 255"],
+    "passes": true,
+    "notes": "Uses interaction.values[0]"
   },
   {
     "category": "functional",
     "description": "In handleVariantSelectMenu: determine scope (session or channel) from context",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": ["Implemented at lines 266, 295"],
+    "passes": true,
+    "notes": "Checks context.isThread && context.sessionId for session scope"
   },
   {
     "category": "functional",
     "description": "In handleVariantSelectMenu: if \"Default\" selected (`__default__`), call `clearSessionVariant` or `clearChannelVariant`",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": ["Implemented at lines 268-270, 296-298"],
+    "passes": true,
+    "notes": "Checks isDefault = selectedVariant === '__default__'"
   },
   {
     "category": "functional",
     "description": "In handleVariantSelectMenu: otherwise, call `setSessionVariant` or `setChannelVariant`",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": ["Implemented at lines 272-276, 300-304"],
+    "passes": true,
+    "notes": "Uses setSessionVariant/setChannelVariant from database.js"
   },
   {
     "category": "functional",
     "description": "In handleVariantSelectMenu: call `abortAndRetrySession` to apply immediately",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": ["Implemented at lines 279-284"],
+    "passes": true,
+    "notes": "Only for session scope when thread exists"
   },
   {
     "category": "functional",
     "description": "In handleVariantSelectMenu: send confirmation message with variant name",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": ["Implemented at lines 286-293, 306-311"],
+    "passes": true,
+    "notes": "Shows variant name with retry message if applicable"
   },
   {
     "category": "functional",
     "description": "Export `handleVariantCommand` and `handleVariantSelectMenu` from variant.ts",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": ["Both functions exported at module level"],
+    "passes": true,
+    "notes": "Export via function declaration (export async function ...)"
   },
   {
     "category": "functional",

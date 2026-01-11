@@ -272,3 +272,20 @@
   - Typecheck: Source compiles clean (pre-existing vitest errors in old test files only)
   - Tests: **10/10 pass** for new tests, pre-existing snapshot mismatches in other test files
   - Lint: No lint script available
+
+## Iteration 18 - 2026-01-11
+- **Verified**: Question tool v2 SDK migration via **code-level verification**
+- **File**: `discord/src/commands/ask-question.ts:210-228`
+- **Verification**:
+  - Confirmed v2 SDK `question.reply` signature in `sdk.gen.d.ts:585-589`
+  - SDK expects: `{ requestID: string, directory?: string, answers?: Array<QuestionAnswer> }`
+  - Implementation uses: `{ requestID: context.requestId, directory: context.directory, answers: answersPayload }`
+  - **Parameters match exactly** - no type mismatches
+  - Error handling via `{ error }` destructuring at line 222-224
+  - Null check for v2 client with descriptive error at lines 211-214
+  - Success logging at lines 226-228
+- **Why**: Manual E2E testing requires running Discord bot (out of scope). Code-level verification confirms API contract compliance.
+- **Feedback**:
+  - Typecheck: Source compiles clean (pre-existing vitest errors in test files only)
+  - Tests: 23/23 pass for variant-related tests
+  - Lint: No lint script available

@@ -71,3 +71,17 @@
   - Typecheck: Pre-existing vitest errors only
   - Tests: Pre-existing snapshot mismatches
   - Lint: No lint script available
+
+## Iteration 6 - 2026-01-11
+- **Migrated**: `ask-question.ts` from **direct HTTP to v2 SDK**
+- **File**: `discord/src/commands/ask-question.ts`
+- **Changes**:
+  - Replaced `getOpencodeServerPort` import with `getOpencodeClientV2`
+  - Replaced direct `fetch()` call to `/question/{requestID}/reply` with `clientV2.question.reply()`
+  - Uses typed SDK params: `{ requestID, directory, answers }`
+  - Error handling via `{ error }` destructuring pattern
+- **Why**: High-risk migration - direct HTTP call bypasses typed SDK, prone to breakage. v2 SDK provides type safety and consistency with other migrated endpoints.
+- **Feedback**:
+  - Typecheck: Source compiles clean (pre-existing vitest errors in test files only)
+  - Tests: Pre-existing snapshot mismatches (unrelated)
+  - Lint: No lint script available

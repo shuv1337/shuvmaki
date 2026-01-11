@@ -183,32 +183,54 @@
   {
     "category": "functional",
     "description": "Read `discord/src/commands/ask-question.ts` to understand current implementation",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Read file to understand direct HTTP call at lines 214-221",
+      "Found submitQuestionAnswers() uses fetch to /question/{requestID}/reply",
+      "Uses getOpencodeServerPort() to construct URL"
+    ],
+    "passes": true,
+    "notes": "File shows direct HTTP call pattern that bypasses typed SDK - migration target identified"
   },
   {
     "category": "functional",
     "description": "Import `getOpencodeClientV2` in ask-question.ts",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Replaced getOpencodeServerPort import with getOpencodeClientV2",
+      "Import from '../opencode.js' at line 13"
+    ],
+    "passes": true,
+    "notes": "Import updated to use v2 SDK client"
   },
   {
     "category": "functional",
     "description": "Locate the direct HTTP call to `/question/{requestID}/reply`",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Located in submitQuestionAnswers() function",
+      "Was at lines 214-221 before migration"
+    ],
+    "passes": true,
+    "notes": "Found in try block of submitQuestionAnswers"
   },
   {
     "category": "functional",
     "description": "Replace HTTP call with v2 SDK `clientV2.question.reply({ requestID, directory, answers })`",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Replaced fetch() with clientV2.question.reply()",
+      "Uses { requestID, directory, answers } flat params",
+      "Error handling via { error } destructuring"
+    ],
+    "passes": true,
+    "notes": "Migration complete at lines 210-224"
   },
   {
     "category": "functional",
     "description": "Remove `getOpencodeServerPort` import if no longer needed after migration",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Removed getOpencodeServerPort import",
+      "Added getOpencodeClientV2 import instead"
+    ],
+    "passes": true,
+    "notes": "Import cleanup complete"
   },
   {
     "category": "functional",

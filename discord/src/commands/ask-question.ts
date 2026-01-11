@@ -10,7 +10,7 @@ import {
 } from 'discord.js'
 import crypto from 'node:crypto'
 import { sendThreadMessage } from '../discord-utils.js'
-import { getOpencodeServerPort } from '../opencode.js'
+import { getOpencodeClientV2 } from '../opencode.js'
 import { createLogger } from '../logger.js'
 
 const logger = createLogger('ASK_QUESTION')
@@ -106,7 +106,8 @@ export async function showAskUserQuestionDropdowns({
       selectMenu.setMaxValues(options.length)
     }
 
-    const actionRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(selectMenu)
+    const actionRow =
+      new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(selectMenu)
 
     await thread.send({
       content: `**${q.header}**\n${q.question}`,
@@ -114,14 +115,16 @@ export async function showAskUserQuestionDropdowns({
     })
   }
 
-  logger.log(`Showed ${input.questions.length} question dropdown(s) for session ${sessionId}`)
+  logger.log(
+    `Showed ${input.questions.length} question dropdown(s) for session ${sessionId}`,
+  )
 }
 
 /**
  * Handle dropdown selection for AskUserQuestion.
  */
 export async function handleAskQuestionSelectMenu(
-  interaction: StringSelectMenuInteraction
+  interaction: StringSelectMenuInteraction,
 ): Promise<void> {
   const customId = interaction.customId
 
@@ -196,7 +199,7 @@ export async function handleAskQuestionSelectMenu(
  * Uses the question.reply API to provide answers to the waiting tool.
  */
 async function submitQuestionAnswers(
-  context: PendingQuestionContext
+  context: PendingQuestionContext,
 ): Promise<void> {
   try {
     // Build answers array: each element is an array of selected labels for that question
@@ -204,33 +207,30 @@ async function submitQuestionAnswers(
       return context.answers[i] || []
     })
 
-    // Reply to the question using direct HTTP call to OpenCode API
-    // (v1 SDK doesn't have question.reply, so we call it directly)
-    const port = getOpencodeServerPort(context.directory)
-    if (!port) {
+    // Reply to the question using v2 SDK
+    const clientV2 = getOpencodeClientV2(context.directory)
+    if (!clientV2) {
       throw new Error('OpenCode server not found for directory')
     }
 
-    const response = await fetch(
-      `http://127.0.0.1:${port}/question/${context.requestId}/reply`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ answers: answersPayload }),
-      }
-    )
+    const { error } = await clientV2.question.reply({
+      requestID: context.requestId,
+      directory: context.directory,
+      answers: answersPayload,
+    })
 
-    if (!response.ok) {
-      const text = await response.text()
-      throw new Error(`Failed to reply to question: ${response.status} ${text}`)
+    if (error) {
+      throw new Error(`Failed to reply to question: ${error}`)
     }
 
-    logger.log(`Submitted answers for question ${context.requestId} in session ${context.sessionId}`)
+    logger.log(
+      `Submitted answers for question ${context.requestId} in session ${context.sessionId}`,
+    )
   } catch (error) {
     logger.error('Failed to submit answers:', error)
     await sendThreadMessage(
       context.thread,
-      `✗ Failed to submit answers: ${error instanceof Error ? error.message : 'Unknown error'}`
+      `✗ Failed to submit answers: ${error instanceof Error ? error.message : 'Unknown error'}`,
     )
   }
 }
@@ -256,7 +256,11 @@ export function parseAskUserQuestionTool(part: {
 
   const input = part.state?.input as AskUserQuestionInput | undefined
 
-  if (!input?.questions || !Array.isArray(input.questions) || input.questions.length === 0) {
+  if (
+    !input?.questions ||
+    !Array.isArray(input.questions) ||
+    input.questions.length === 0
+  ) {
     return null
   }
 

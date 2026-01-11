@@ -1,5 +1,5 @@
 {
-  "name": "kimaki",
+  "name": "shuvmaki",
   "module": "index.ts",
   "type": "module",
   "version": "0.4.26",
@@ -27,7 +27,8 @@
     "@types/js-yaml": "^4.0.9",
     "@types/ms": "^2.1.0",
     "@types/node": "^24.3.0",
-    "tsx": "^4.20.5"
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.3"
   },
   "dependencies": {
     "@ai-sdk/google": "^2.0.47",

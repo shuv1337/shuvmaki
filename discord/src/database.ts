@@ -117,6 +117,24 @@ export function runModelMigrations(database?: Database.Database): void {
     )
   `)
 
+  // Variant preferences - allows selecting specific model variants (e.g., thinking modes)
+  targetDb.exec(`
+    CREATE TABLE IF NOT EXISTS channel_variants (
+      channel_id TEXT PRIMARY KEY,
+      variant_name TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `)
+
+  targetDb.exec(`
+    CREATE TABLE IF NOT EXISTS session_variants (
+      session_id TEXT PRIMARY KEY,
+      variant_name TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `)
+
   dbLogger.log('Model preferences migrations complete')
 }
 
@@ -141,7 +159,7 @@ export function setChannelModel(channelId: string, modelId: string): void {
   db.prepare(
     `INSERT INTO channel_models (channel_id, model_id, updated_at) 
      VALUES (?, ?, CURRENT_TIMESTAMP)
-     ON CONFLICT(channel_id) DO UPDATE SET model_id = ?, updated_at = CURRENT_TIMESTAMP`
+     ON CONFLICT(channel_id) DO UPDATE SET model_id = ?, updated_at = CURRENT_TIMESTAMP`,
   ).run(channelId, modelId, modelId)
 }
 
@@ -164,7 +182,7 @@ export function getSessionModel(sessionId: string): string | undefined {
 export function setSessionModel(sessionId: string, modelId: string): void {
   const db = getDatabase()
   db.prepare(
-    `INSERT OR REPLACE INTO session_models (session_id, model_id) VALUES (?, ?)`
+    `INSERT OR REPLACE INTO session_models (session_id, model_id) VALUES (?, ?)`,
   ).run(sessionId, modelId)
 }
 
@@ -187,7 +205,7 @@ export function setChannelAgent(channelId: string, agentName: string): void {
   db.prepare(
     `INSERT INTO channel_agents (channel_id, agent_name, updated_at) 
      VALUES (?, ?, CURRENT_TIMESTAMP)
-     ON CONFLICT(channel_id) DO UPDATE SET agent_name = ?, updated_at = CURRENT_TIMESTAMP`
+     ON CONFLICT(channel_id) DO UPDATE SET agent_name = ?, updated_at = CURRENT_TIMESTAMP`,
   ).run(channelId, agentName, agentName)
 }
 
@@ -208,8 +226,78 @@ export function getSessionAgent(sessionId: string): string | undefined {
 export function setSessionAgent(sessionId: string, agentName: string): void {
   const db = getDatabase()
   db.prepare(
-    `INSERT OR REPLACE INTO session_agents (session_id, agent_name) VALUES (?, ?)`
+    `INSERT OR REPLACE INTO session_agents (session_id, agent_name) VALUES (?, ?)`,
   ).run(sessionId, agentName)
+}
+
+/**
+ * Get the variant preference for a channel.
+ * @returns Variant name or undefined
+ */
+export function getChannelVariant(channelId: string): string | undefined {
+  const db = getDatabase()
+  const row = db
+    .prepare('SELECT variant_name FROM channel_variants WHERE channel_id = ?')
+    .get(channelId) as { variant_name: string } | undefined
+  return row?.variant_name
+}
+
+/**
+ * Set the variant preference for a channel.
+ * @param variantName The variant name to store
+ */
+export function setChannelVariant(
+  channelId: string,
+  variantName: string,
+): void {
+  const db = getDatabase()
+  db.prepare(
+    `INSERT INTO channel_variants (channel_id, variant_name, updated_at) 
+     VALUES (?, ?, CURRENT_TIMESTAMP)
+     ON CONFLICT(channel_id) DO UPDATE SET variant_name = ?, updated_at = CURRENT_TIMESTAMP`,
+  ).run(channelId, variantName, variantName)
+}
+
+/**
+ * Clear the variant preference for a channel.
+ */
+export function clearChannelVariant(channelId: string): void {
+  const db = getDatabase()
+  db.prepare('DELETE FROM channel_variants WHERE channel_id = ?').run(channelId)
+}
+
+/**
+ * Get the variant preference for a session.
+ * @returns Variant name or undefined
+ */
+export function getSessionVariant(sessionId: string): string | undefined {
+  const db = getDatabase()
+  const row = db
+    .prepare('SELECT variant_name FROM session_variants WHERE session_id = ?')
+    .get(sessionId) as { variant_name: string } | undefined
+  return row?.variant_name
+}
+
+/**
+ * Set the variant preference for a session.
+ * @param variantName The variant name to store
+ */
+export function setSessionVariant(
+  sessionId: string,
+  variantName: string,
+): void {
+  const db = getDatabase()
+  db.prepare(
+    `INSERT OR REPLACE INTO session_variants (session_id, variant_name) VALUES (?, ?)`,
+  ).run(sessionId, variantName)
+}
+
+/**
+ * Clear the variant preference for a session.
+ */
+export function clearSessionVariant(sessionId: string): void {
+  const db = getDatabase()
+  db.prepare('DELETE FROM session_variants WHERE session_id = ?').run(sessionId)
 }
 
 export function closeDatabase(): void {

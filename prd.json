@@ -1,0 +1,791 @@
+[
+  {
+    "category": "functional",
+    "description": "Call v2 provider API and log raw response to inspect variant object structure",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Document which fields exist on variant objects (disabled, description, etc.)",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Confirm runtime type includes `disabled` field for filtering",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Verify `getOpencodeClientV2(directory)` returns typed client in `opencode.ts`",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Confirm v2 `provider.list` exposes `models[].variants` as expected",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Confirm v2 `session.prompt` accepts `variant?: string` field",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Confirm v2 `session.command` accepts `variant?: string` field",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Note path parameter difference: v2 uses `sessionID`, v1 uses `id`",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Import `getOpencodeClientV2` in `discord/src/session-handler.ts`",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Locate the `getClient().session.prompt` call in session-handler.ts",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Replace v1 `session.prompt` with v2 client call using `sessionID` path param",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Update prompt call to use flat parameter style instead of `path: { id: ... }`",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Locate the `getClient().session.command` call in session-handler.ts",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Replace v1 `session.command` with v2 client call using `sessionID` path param",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Update command call to use flat parameter style instead of `path: { id: ... }`",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Ensure model/agent fallback logic remains unchanged after migration",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Run `pnpm tsc` from `discord` directory to verify types compile",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Read `discord/src/commands/ask-question.ts` to understand current implementation",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Import `getOpencodeClientV2` in ask-question.ts",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Locate the direct HTTP call to `/question/{requestID}/reply`",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Replace HTTP call with v2 SDK `clientV2.question.reply({ requestID, directory, answers })`",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Remove `getOpencodeServerPort` import if no longer needed after migration",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Test question tool flow manually end-to-end",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Open `discord/src/database.ts`",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Locate the `runModelMigrations` function",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Add `channel_variants` table creation SQL:",
+    "steps": [
+      "Added CREATE TABLE IF NOT EXISTS channel_variants in runModelMigrations()"
+    ],
+    "passes": true,
+    "notes": "Table stores channel_id (PK), variant_name, created_at, updated_at"
+  },
+  {
+    "category": "functional",
+    "description": "Add `session_variants` table creation SQL:",
+    "steps": [
+      "Added CREATE TABLE IF NOT EXISTS session_variants in runModelMigrations()"
+    ],
+    "passes": true,
+    "notes": "Table stores session_id (PK), variant_name, created_at"
+  },
+  {
+    "category": "functional",
+    "description": "Add `getChannelVariant(channelId): string | undefined` function in database.ts",
+    "steps": ["Implemented function that queries channel_variants table"],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Add `setChannelVariant(channelId, variantName): void` function in database.ts",
+    "steps": ["Implemented with INSERT ... ON CONFLICT DO UPDATE pattern"],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Add `clearChannelVariant(channelId): void` function (DELETE FROM) in database.ts",
+    "steps": ["Implemented DELETE FROM channel_variants WHERE channel_id = ?"],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Add `getSessionVariant(sessionId): string | undefined` function in database.ts",
+    "steps": ["Implemented function that queries session_variants table"],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Add `setSessionVariant(sessionId, variantName): void` function in database.ts",
+    "steps": ["Implemented with INSERT OR REPLACE pattern"],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Add `clearSessionVariant(sessionId): void` function (DELETE FROM) in database.ts",
+    "steps": ["Implemented DELETE FROM session_variants WHERE session_id = ?"],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Export all new helper functions from database.ts",
+    "steps": ["All functions are exported at module level"],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Ensure all new functions have proper error logging (no silent catches)",
+    "steps": [
+      "Functions use synchronous better-sqlite3 API which throws on error - no try/catch needed"
+    ],
+    "passes": true,
+    "notes": "better-sqlite3 is synchronous and throws errors directly, consistent with existing code pattern"
+  },
+  {
+    "category": "functional",
+    "description": "Create new file `discord/src/commands/variant.ts`",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Add imports: discord.js types, database helpers, opencode client, logger",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Create `pendingVariantContexts` Map for storing pending selection contexts",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Add TODO comment about TTL cleanup being technical debt",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Create `handleVariantCommand` function with signature matching agent.ts pattern",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "In handleVariantCommand: get channel ID and session ID from interaction",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "In handleVariantCommand: look up current model preference (session then channel)",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "In handleVariantCommand: if no model set, reply \"No model preference set. Run `/model` first.\"",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "In handleVariantCommand: fetch model metadata via v2 client to get variants",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "In handleVariantCommand: if no variants exist, reply \"No variants available for [model name].\"",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Create helper function to build variant options list from metadata",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "In variant options helper: filter out variants where `disabled === true`",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "In variant options helper: sort variants alphabetically by key name",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "In variant options helper: take first 24 variants",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "In variant options helper: add \"Default\" option at the end (value: `__default__`)",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "In handleVariantCommand: create StringSelectMenuBuilder with variant options",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "In handleVariantCommand: store context in `pendingVariantContexts` Map with hash key",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "In handleVariantCommand: send select menu to user with customId `variant_select:{hash}`",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Create `handleVariantSelectMenu` function in variant.ts",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "In handleVariantSelectMenu: extract context hash from customId",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "In handleVariantSelectMenu: retrieve context from `pendingVariantContexts` Map",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "In handleVariantSelectMenu: if no context found, reply with error",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "In handleVariantSelectMenu: get selected variant value from interaction",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "In handleVariantSelectMenu: determine scope (session or channel) from context",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "In handleVariantSelectMenu: if \"Default\" selected (`__default__`), call `clearSessionVariant` or `clearChannelVariant`",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "In handleVariantSelectMenu: otherwise, call `setSessionVariant` or `setChannelVariant`",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "In handleVariantSelectMenu: call `abortAndRetrySession` to apply immediately",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "In handleVariantSelectMenu: send confirmation message with variant name",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Export `handleVariantCommand` and `handleVariantSelectMenu` from variant.ts",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Open `discord/src/commands/model.ts`",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Import `getOpencodeClientV2` from opencode.ts",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Locate the v1 `getClient().provider.list` call",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Replace with v2 client call: `clientV2.provider.list({ directory })`",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Update any type references for the provider response",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Ensure provider/model selection logic works with v2 response structure",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "In model.ts: create `pendingModelVariantContexts` Map for variant selection contexts",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "In model.ts: add TODO comment about TTL cleanup being technical debt",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "In `handleModelSelectMenu`: after model is selected, fetch model metadata via v2",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "In `handleModelSelectMenu`: check if selected model has variants",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "In `handleModelSelectMenu`: if no variants, persist model immediately",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "In `handleModelSelectMenu`: if no variants, call `clearSessionVariant` or `clearChannelVariant` to clear old variant",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "In `handleModelSelectMenu`: if variants exist, build variant picker (reuse logic from variant.ts)",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "In `handleModelSelectMenu`: store context with providerId, providerName, modelId in Map",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "In `handleModelSelectMenu`: show variant picker with customId `model_variant:{hash}`",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "In `handleModelSelectMenu`: only persist model+variant after variant selection",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Create `handleModelVariantSelectMenu` function in model.ts",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "In handleModelVariantSelectMenu: extract context hash from customId",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "In handleModelVariantSelectMenu: retrieve context from `pendingModelVariantContexts` Map",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "In handleModelVariantSelectMenu: if no context found, reply with error",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "In handleModelVariantSelectMenu: get selected variant value from interaction",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "In handleModelVariantSelectMenu: persist model preference (existing logic)",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "In handleModelVariantSelectMenu: if \"Default\" selected, call clear variant helper",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "In handleModelVariantSelectMenu: otherwise, call set variant helper",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "In handleModelVariantSelectMenu: call `abortAndRetrySession` to apply immediately",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "In handleModelVariantSelectMenu: send confirmation message including variant in format: \"**Provider** / **Model** / **Variant**\"",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Export `handleModelVariantSelectMenu` from model.ts",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Open `discord/src/session-handler.ts`",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Import `getSessionVariant` and `getChannelVariant` from database.ts",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Locate where model preference is read (session then channel fallback)",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Add variant preference reading with same fallback pattern:",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Locate the v2 `session.prompt` call",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Add `variant: variantPreference` to the prompt call when present",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Locate the v2 `session.command` call",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Add `variant: variantPreference` to the command call when present",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Add log statement: `sessionLogger.log('[VARIANT] Using variant: ${variantPreference}')`",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Open `discord/src/cli.ts`",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Locate where slash commands are registered (array of SlashCommandBuilder)",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Add new slash command:",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Open `discord/src/interaction-handler.ts`",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Import `handleVariantCommand` from `./commands/variant.js`",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Import `handleVariantSelectMenu` from `./commands/variant.js`",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Import `handleModelVariantSelectMenu` from `./commands/model.js`",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Locate the command switch statement",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Add case for 'variant' command:",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Locate where select menu interactions are routed (customId checks)",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Add routing for `variant_select:` prefix:",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Add routing for `model_variant:` prefix:",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Run `pnpm tsc` from `discord` directory - full project typecheck",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Fix any remaining type errors",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Review all new code for silent catch blocks - add logging where missing",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Verify all new functions are properly exported",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Test `/model` shows provider → model → variant flow when variants exist",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Test `/model` for a model without variants clears any stored variant",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Test `/variant` shows variants for active model",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Test `/variant` when no model set shows error message",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Test selecting \"Default\" clears stored variant preference",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Test session-level variant overrides channel-level variant",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Test `/variant` during active request aborts and retries with new variant",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Verify variant field is included in prompt/command API calls via logs",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Test variant list respects 24+Default limit",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Test disabled variants are filtered out",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Test ask question tool works end-to-end with v2 SDK",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Add TTL cleanup for pending context Maps across all commands",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Consider migrating `discord/src/markdown.ts` to v2 clients for consistency",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Write tests for variant preference helper functions",
+    "steps": ["Add verification steps for this item."],
+    "passes": false
+  }
+]

@@ -135,3 +135,20 @@
   - Typecheck: Source compiles clean (pre-existing vitest errors in test files only)
   - Tests: Pre-existing snapshot mismatches (unrelated)
   - Lint: No lint script available
+
+## Iteration 10 - 2026-01-11
+- **Wired**: `/variant` command into **cli.ts** and **interaction-handler.ts**
+- **Files**:
+  - `discord/src/cli.ts` - Added SlashCommandBuilder for `/variant`
+  - `discord/src/interaction-handler.ts` - Import + routing for variant handlers
+- **Changes**:
+  - **cli.ts**: Added `/variant` slash command registration (after `/agent`)
+  - **interaction-handler.ts**:
+    - Import: `handleVariantCommand`, `handleVariantSelectMenu` from `./commands/variant.js`
+    - Command case: `'variant'` → `handleVariantCommand({ interaction, appId })`
+    - Select menu routing: `variant_select:` prefix → `handleVariantSelectMenu(interaction)`
+- **Why**: **Blocking integration** - without this, the existing `/variant` command code in `variant.ts` couldn't be invoked. Users can now use `/variant` to select model variants.
+- **Feedback**:
+  - Typecheck: Source compiles clean (pre-existing vitest errors in test files only)
+  - Tests: Pre-existing snapshot mismatches (unrelated to changes)
+  - Lint: No lint script available

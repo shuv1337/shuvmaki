@@ -292,6 +292,10 @@ async function registerCommands(
       .setDescription('Set the preferred agent for this channel or session')
       .toJSON(),
     new SlashCommandBuilder()
+      .setName('variant')
+      .setDescription('Set the model variant for this channel or session')
+      .toJSON(),
+    new SlashCommandBuilder()
       .setName('queue')
       .setDescription(
         'Queue a message to be sent after the current response finishes',

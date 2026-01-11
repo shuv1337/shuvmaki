@@ -782,38 +782,49 @@
   {
     "category": "functional",
     "description": "Open `discord/src/cli.ts`",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": ["Read file to find registerCommands function"],
+    "passes": true,
+    "notes": "File read, slash commands array located at lines 192-320"
   },
   {
     "category": "functional",
     "description": "Locate where slash commands are registered (array of SlashCommandBuilder)",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Found commands array at lines 192-320 in registerCommands function"
+    ],
+    "passes": true,
+    "notes": "Array of SlashCommandBuilder objects, new commands added after 'agent' command"
   },
   {
     "category": "functional",
     "description": "Add new slash command:",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Added SlashCommandBuilder for /variant after /agent command",
+      "Description: 'Set the model variant for this channel or session'"
+    ],
+    "passes": true,
+    "notes": "Added at line 294 in cli.ts"
   },
   {
     "category": "functional",
     "description": "Open `discord/src/interaction-handler.ts`",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": ["Read file to understand routing structure"],
+    "passes": true,
+    "notes": "File uses switch statements for commands and if/startsWith for select menus"
   },
   {
     "category": "functional",
     "description": "Import `handleVariantCommand` from `./commands/variant.js`",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": ["Added import at line 16 alongside handleAgentCommand"],
+    "passes": true,
+    "notes": "Import: { handleVariantCommand, handleVariantSelectMenu } from './commands/variant.js'"
   },
   {
     "category": "functional",
     "description": "Import `handleVariantSelectMenu` from `./commands/variant.js`",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": ["Added in same import statement as handleVariantCommand"],
+    "passes": true,
+    "notes": "Combined import for both functions"
   },
   {
     "category": "functional",
@@ -824,26 +835,37 @@
   {
     "category": "functional",
     "description": "Locate the command switch statement",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": ["Found at lines 71-133 in registerInteractionHandler"],
+    "passes": true,
+    "notes": "Switch on interaction.commandName"
   },
   {
     "category": "functional",
     "description": "Add case for 'variant' command:",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Added case 'variant': at line 118",
+      "Calls handleVariantCommand({ interaction, appId })"
+    ],
+    "passes": true,
+    "notes": "Added after 'agent' case, before 'queue' case"
   },
   {
     "category": "functional",
     "description": "Locate where select menu interactions are routed (customId checks)",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": ["Found at lines 143-171 in isStringSelectMenu block"],
+    "passes": true,
+    "notes": "Uses customId.startsWith() pattern for routing"
   },
   {
     "category": "functional",
     "description": "Add routing for `variant_select:` prefix:",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Added if block at lines 171-175",
+      "Checks customId.startsWith('variant_select:')",
+      "Calls handleVariantSelectMenu(interaction)"
+    ],
+    "passes": true,
+    "notes": "Added after ask_question handler"
   },
   {
     "category": "functional",

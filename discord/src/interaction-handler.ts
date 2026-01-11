@@ -3,24 +3,46 @@
 // and manages autocomplete, select menu interactions for the bot.
 
 import { Events, type Client, type Interaction } from 'discord.js'
-import { handleSessionCommand, handleSessionAutocomplete } from './commands/session.js'
-import { handleResumeCommand, handleResumeAutocomplete } from './commands/resume.js'
-import { handleAddProjectCommand, handleAddProjectAutocomplete } from './commands/add-project.js'
+import {
+  handleSessionCommand,
+  handleSessionAutocomplete,
+} from './commands/session.js'
+import {
+  handleResumeCommand,
+  handleResumeAutocomplete,
+} from './commands/resume.js'
+import {
+  handleAddProjectCommand,
+  handleAddProjectAutocomplete,
+} from './commands/add-project.js'
 import { handleCreateNewProjectCommand } from './commands/create-new-project.js'
-import { handleAcceptCommand, handleRejectCommand } from './commands/permissions.js'
+import {
+  handleAcceptCommand,
+  handleRejectCommand,
+} from './commands/permissions.js'
 import { handleAbortCommand } from './commands/abort.js'
 import { handleShareCommand } from './commands/share.js'
 import { handleForkCommand, handleForkSelectMenu } from './commands/fork.js'
-import { handleModelCommand, handleProviderSelectMenu, handleModelSelectMenu } from './commands/model.js'
+import {
+  handleModelCommand,
+  handleProviderSelectMenu,
+  handleModelSelectMenu,
+} from './commands/model.js'
 import { handleAgentCommand, handleAgentSelectMenu } from './commands/agent.js'
+import {
+  handleVariantCommand,
+  handleVariantSelectMenu,
+} from './commands/variant.js'
 import { handleAskQuestionSelectMenu } from './commands/ask-question.js'
-import { handleQueueCommand, handleClearQueueCommand } from './commands/queue.js'
+import {
+  handleQueueCommand,
+  handleClearQueueCommand,
+} from './commands/queue.js'
 import { handleUndoCommand, handleRedoCommand } from './commands/undo-redo.js'
 import { handleUserCommand } from './commands/user-command.js'
 import { createLogger } from './logger.js'
 
 const interactionLogger = createLogger('INTERACTION')
-
 
 export function registerInteractionHandler({
   discordClient,
@@ -66,7 +88,9 @@ export function registerInteractionHandler({
         }
 
         if (interaction.isChatInputCommand()) {
-          interactionLogger.log(`[COMMAND] Processing: ${interaction.commandName}`)
+          interactionLogger.log(
+            `[COMMAND] Processing: ${interaction.commandName}`,
+          )
 
           switch (interaction.commandName) {
             case 'session':
@@ -82,7 +106,10 @@ export function registerInteractionHandler({
               return
 
             case 'create-new-project':
-              await handleCreateNewProjectCommand({ command: interaction, appId })
+              await handleCreateNewProjectCommand({
+                command: interaction,
+                appId,
+              })
               return
 
             case 'accept':
@@ -113,6 +140,10 @@ export function registerInteractionHandler({
 
             case 'agent':
               await handleAgentCommand({ interaction, appId })
+              return
+
+            case 'variant':
+              await handleVariantCommand({ interaction, appId })
               return
 
             case 'queue':
@@ -167,19 +198,34 @@ export function registerInteractionHandler({
             await handleAskQuestionSelectMenu(interaction)
             return
           }
+
+          if (customId.startsWith('variant_select:')) {
+            await handleVariantSelectMenu(interaction)
+            return
+          }
           return
         }
       } catch (error) {
-        interactionLogger.error('[INTERACTION] Error handling interaction:', error)
+        interactionLogger.error(
+          '[INTERACTION] Error handling interaction:',
+          error,
+        )
         try {
-          if (interaction.isRepliable() && !interaction.replied && !interaction.deferred) {
+          if (
+            interaction.isRepliable() &&
+            !interaction.replied &&
+            !interaction.deferred
+          ) {
             await interaction.reply({
               content: 'An error occurred processing this command.',
               ephemeral: true,
             })
           }
         } catch (replyError) {
-          interactionLogger.error('[INTERACTION] Failed to send error reply:', replyError)
+          interactionLogger.error(
+            '[INTERACTION] Failed to send error reply:',
+            replyError,
+          )
         }
       }
     },

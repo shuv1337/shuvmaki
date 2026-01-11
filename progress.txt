@@ -219,3 +219,18 @@
   - Typecheck: Source compiles clean (pre-existing vitest errors in test files only)
   - Tests: xml.test.ts passes
   - Lint: No lint script available
+
+## Iteration 15 - 2026-01-11
+- **Added**: **Tests for variant preference helpers**
+- **File**: `discord/src/database-variants.test.ts` (new file, 13 tests)
+- **Changes**:
+  - Created test file using `bun:sqlite` (bun-compatible API vs better-sqlite3)
+  - Tests cover all 6 variant helper functions from database.ts
+  - Test categories: channel variants (5), session variants (5), table schema (3)
+  - Validates: get/set roundtrip, update overwrites, clear removes, idempotent clear
+  - Validates: table columns, primary keys, migration idempotency
+- **Why**: **Database layer validation** - ensures variant persistence code is correct before manual E2E testing. Foundational for all variant features.
+- **Feedback**:
+  - Typecheck: Source compiles clean (pre-existing vitest errors in old test files only)
+  - Tests: **13/13 pass** for new tests, pre-existing snapshot mismatches in other test files
+  - Lint: No lint script available

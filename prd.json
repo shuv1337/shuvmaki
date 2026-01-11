@@ -1090,7 +1090,16 @@
   {
     "category": "functional",
     "description": "Write tests for variant preference helper functions",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Created discord/src/database-variants.test.ts with 13 tests",
+      "Tests use bun:sqlite (bun-compatible) instead of better-sqlite3 (not supported in bun)",
+      "Tests cover: getChannelVariant, setChannelVariant, clearChannelVariant",
+      "Tests cover: getSessionVariant, setSessionVariant, clearSessionVariant",
+      "Tests verify: roundtrip get/set, update behavior, clear behavior, idempotent clears",
+      "Tests verify: table schema (columns, primary keys), migration idempotency",
+      "All 13 tests pass: bun test src/database-variants.test.ts --run"
+    ],
+    "passes": true,
+    "notes": "Tests validate SQL patterns used in database.ts. Uses in-memory bun:sqlite to test schema and CRUD without touching real database. Pre-existing test file issues (vitest imports, snapshot mismatches) are unrelated to this change."
   }
 ]

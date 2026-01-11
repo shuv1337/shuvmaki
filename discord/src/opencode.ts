@@ -80,7 +80,9 @@ async function waitForServer(port: number, maxAttempts = 30): Promise<boolean> {
       if ((e as Error).message?.includes('Server failed to start')) {
         throw e
       }
-      opencodeLogger.debug(`Server polling attempt failed: ${(e as Error).message}`)
+      opencodeLogger.debug(
+        `Server polling attempt failed: ${(e as Error).message}`,
+      )
     }
     await new Promise((resolve) => setTimeout(resolve, 1000))
   }
@@ -110,13 +112,38 @@ export async function initializeOpencodeForDirectory(directory: string) {
   try {
     fs.accessSync(directory, fs.constants.R_OK | fs.constants.X_OK)
   } catch {
-    throw new Error(`Directory does not exist or is not accessible: ${directory}`)
+    throw new Error(
+      `Directory does not exist or is not accessible: ${directory}`,
+    )
   }
 
   const port = await getOpenPort()
 
-  const opencodeBinDir = `${process.env.HOME}/.opencode/bin`
-  const opencodeCommand = process.env.OPENCODE_PATH || `${opencodeBinDir}/opencode`
+  // Look for shuvcode first (preferred fork), then opencode
+  const opencodeCommand = (() => {
+    if (process.env.OPENCODE_PATH) {
+      return process.env.OPENCODE_PATH
+    }
+    const possiblePaths = [
+      `${process.env.HOME}/.bun/bin/shuvcode`,
+      `${process.env.HOME}/.local/bin/shuvcode`,
+      `${process.env.HOME}/.bun/bin/opencode`,
+      `${process.env.HOME}/.local/bin/opencode`,
+      `${process.env.HOME}/.opencode/bin/opencode`,
+      '/usr/local/bin/shuvcode',
+      '/usr/local/bin/opencode',
+    ]
+    for (const p of possiblePaths) {
+      try {
+        fs.accessSync(p, fs.constants.X_OK)
+        return p
+      } catch {
+        // continue
+      }
+    }
+    // Fallback to PATH lookup
+    return 'shuvcode'
+  })()
 
   const serverProcess = spawn(
     opencodeCommand,
@@ -144,7 +171,9 @@ export async function initializeOpencodeForDirectory(directory: string) {
 
   // Buffer logs until we know if server started successfully
   const logBuffer: string[] = []
-  logBuffer.push(`Spawned opencode serve --port ${port} in ${directory} (pid: ${serverProcess.pid})`)
+  logBuffer.push(
+    `Spawned opencode serve --port ${port} in ${directory} (pid: ${serverProcess.pid})`,
+  )
 
   serverProcess.stdout?.on('data', (data) => {
     logBuffer.push(`[stdout] ${data.toString().trim()}`)
@@ -159,7 +188,10 @@ export async function initializeOpencodeForDirectory(directory: string) {
   })
 
   serverProcess.on('exit', (code) => {
-    opencodeLogger.log(`Opencode server on ${directory} exited with code:`, code)
+    opencodeLogger.log(
+      `Opencode server on ${directory} exited with code:`,
+      code,
+    )
     opencodeServers.delete(directory)
     if (code !== 0) {
       const retryCount = serverRetryCount.get(directory) || 0
@@ -237,7 +269,9 @@ export function getOpencodeServerPort(directory: string): number | null {
   return entry?.port ?? null
 }
 
-export function getOpencodeClientV2(directory: string): OpencodeClientV2 | null {
+export function getOpencodeClientV2(
+  directory: string,
+): OpencodeClientV2 | null {
   const entry = opencodeServers.get(directory)
   return entry?.clientV2 ?? null
 }

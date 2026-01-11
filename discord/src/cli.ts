@@ -27,7 +27,10 @@ import {
   createProjectChannels,
   type ChannelWithTags,
 } from './discord-bot.js'
-import type { OpencodeClient, Command as OpencodeCommand } from '@opencode-ai/sdk'
+import type {
+  OpencodeClient,
+  Command as OpencodeCommand,
+} from '@opencode-ai/sdk'
 import {
   Events,
   ChannelType,
@@ -41,9 +44,13 @@ import {
 import path from 'node:path'
 import fs from 'node:fs'
 
-
 import { createLogger } from './logger.js'
-import { spawn, spawnSync, execSync, type ExecSyncOptions } from 'node:child_process'
+import {
+  spawn,
+  spawnSync,
+  execSync,
+  type ExecSyncOptions,
+} from 'node:child_process'
 import http from 'node:http'
 
 const cliLogger = createLogger('CLI')
@@ -60,11 +67,22 @@ async function killProcessOnPort(port: number): Promise<boolean> {
   try {
     if (isWindows) {
       // Windows: find PID using netstat, then kill
-      const result = spawnSync('cmd', ['/c', `for /f "tokens=5" %a in ('netstat -ano ^| findstr :${port} ^| findstr LISTENING') do @echo %a`], {
-        shell: false,
-        encoding: 'utf-8',
-      })
-      const pids = result.stdout?.trim().split('\n').map((p) => p.trim()).filter((p) => /^\d+$/.test(p))
+      const result = spawnSync(
+        'cmd',
+        [
+          '/c',
+          `for /f "tokens=5" %a in ('netstat -ano ^| findstr :${port} ^| findstr LISTENING') do @echo %a`,
+        ],
+        {
+          shell: false,
+          encoding: 'utf-8',
+        },
+      )
+      const pids = result.stdout
+        ?.trim()
+        .split('\n')
+        .map((p) => p.trim())
+        .filter((p) => /^\d+$/.test(p))
       // Filter out our own PID and take the first (oldest)
       const targetPid = pids?.find((p) => parseInt(p, 10) !== myPid)
       if (targetPid) {
@@ -74,11 +92,19 @@ async function killProcessOnPort(port: number): Promise<boolean> {
       }
     } else {
       // Unix: use lsof with -sTCP:LISTEN to only find the listening process
-      const result = spawnSync('lsof', ['-i', `:${port}`, '-sTCP:LISTEN', '-t'], {
-        shell: false,
-        encoding: 'utf-8',
-      })
-      const pids = result.stdout?.trim().split('\n').map((p) => p.trim()).filter((p) => /^\d+$/.test(p))
+      const result = spawnSync(
+        'lsof',
+        ['-i', `:${port}`, '-sTCP:LISTEN', '-t'],
+        {
+          shell: false,
+          encoding: 'utf-8',
+        },
+      )
+      const pids = result.stdout
+        ?.trim()
+        .split('\n')
+        .map((p) => p.trim())
+        .filter((p) => /^\d+$/.test(p))
       // Filter out our own PID and take the first (oldest)
       const targetPid = pids?.find((p) => parseInt(p, 10) !== myPid)
       if (targetPid) {
@@ -103,7 +129,9 @@ async function checkSingleInstance(): Promise<void> {
       cliLogger.log('Another kimaki instance detected')
       await killProcessOnPort(LOCK_PORT)
       // Wait a moment for port to be released
-      await new Promise((resolve) => { setTimeout(resolve, 500) })
+      await new Promise((resolve) => {
+        setTimeout(resolve, 500)
+      })
     }
   } catch {
     cliLogger.debug('No other kimaki instance detected on lock port')
@@ -124,7 +152,9 @@ async function startLockServer(): Promise<void> {
       if (err.code === 'EADDRINUSE') {
         cliLogger.log('Port still in use, retrying...')
         await killProcessOnPort(LOCK_PORT)
-        await new Promise((r) => { setTimeout(r, 500) })
+        await new Promise((r) => {
+          setTimeout(r, 500)
+        })
         // Retry once
         server.listen(LOCK_PORT, '127.0.0.1')
       } else {
@@ -133,8 +163,6 @@ async function startLockServer(): Promise<void> {
     })
   })
 }
-
-
 
 const EXIT_NO_RESTART = 64
 
@@ -156,7 +184,11 @@ type CliOptions = {
 // Commands to skip when registering user commands (reserved names)
 const SKIP_USER_COMMANDS = ['init']
 
-async function registerCommands(token: string, appId: string, userCommands: OpencodeCommand[] = []) {
+async function registerCommands(
+  token: string,
+  appId: string,
+  userCommands: OpencodeCommand[] = [],
+) {
   const commands = [
     new SlashCommandBuilder()
       .setName('resume')
@@ -209,7 +241,9 @@ async function registerCommands(token: string, appId: string, userCommands: Open
       .toJSON(),
     new SlashCommandBuilder()
       .setName('create-new-project')
-      .setDescription('Create a new project folder, initialize git, and start a session')
+      .setDescription(
+        'Create a new project folder, initialize git, and start a session',
+      )
       .addStringOption((option) => {
         option
           .setName('name')
@@ -225,7 +259,9 @@ async function registerCommands(token: string, appId: string, userCommands: Open
       .toJSON(),
     new SlashCommandBuilder()
       .setName('accept-always')
-      .setDescription('Accept and auto-approve future requests matching this pattern')
+      .setDescription(
+        'Accept and auto-approve future requests matching this pattern',
+      )
       .toJSON(),
     new SlashCommandBuilder()
       .setName('reject')
@@ -257,7 +293,9 @@ async function registerCommands(token: string, appId: string, userCommands: Open
       .toJSON(),
     new SlashCommandBuilder()
       .setName('queue')
-      .setDescription('Queue a message to be sent after the current response finishes')
+      .setDescription(
+        'Queue a message to be sent after the current response finishes',
+      )
       .addStringOption((option) => {
         option
           .setName('message')
@@ -323,78 +361,88 @@ async function registerCommands(token: string, appId: string, userCommands: Open
   }
 }
 
-
-
 async function run({ restart, addChannels }: CliOptions) {
   const forceSetup = Boolean(restart)
 
   intro('🤖 Discord Bot Setup')
 
-  // Step 0: Check if OpenCode CLI is available
-  const opencodeCheck = spawnSync('which', ['opencode'], { shell: true })
+  // Step 0: Check if shuvcode or opencode CLI is available
+  // Prefer shuvcode fork over upstream opencode
+  const possiblePaths = [
+    `${process.env.HOME}/.bun/bin/shuvcode`,
+    `${process.env.HOME}/.local/bin/shuvcode`,
+    `${process.env.HOME}/.bun/bin/opencode`,
+    `${process.env.HOME}/.local/bin/opencode`,
+    `${process.env.HOME}/.opencode/bin/opencode`,
+    '/usr/local/bin/shuvcode',
+    '/usr/local/bin/opencode',
+  ]
 
-  if (opencodeCheck.status !== 0) {
+  const installedPath = possiblePaths.find((p) => {
+    try {
+      fs.accessSync(p, fs.constants.X_OK)
+      return true
+    } catch {
+      return false
+    }
+  })
+
+  // Also check PATH
+  const shuvInPath =
+    spawnSync('which', ['shuvcode'], { shell: true }).status === 0
+  const openInPath =
+    spawnSync('which', ['opencode'], { shell: true }).status === 0
+  const cliAvailable = installedPath || shuvInPath || openInPath
+
+  if (!cliAvailable) {
     note(
-      'OpenCode CLI is required but not found in your PATH.',
-      '⚠️  OpenCode Not Found',
+      'shuvcode/opencode CLI is required but not found.',
+      '⚠️  CLI Not Found',
     )
 
     const shouldInstall = await confirm({
-      message: 'Would you like to install OpenCode right now?',
+      message: 'Would you like to install shuvcode right now?',
     })
 
     if (isCancel(shouldInstall) || !shouldInstall) {
-      cancel('OpenCode CLI is required to run this bot')
+      cancel('shuvcode/opencode CLI is required to run this bot')
       process.exit(0)
     }
 
     const s = spinner()
-    s.start('Installing OpenCode CLI...')
+    s.start('Installing shuvcode CLI...')
 
     try {
-      execSync('curl -fsSL https://opencode.ai/install | bash', {
+      execSync('bun install -g shuvcode', {
         stdio: 'inherit',
         shell: '/bin/bash',
       })
-      s.stop('OpenCode CLI installed successfully!')
+      s.stop('shuvcode CLI installed successfully!')
 
-      // The install script adds opencode to PATH via shell configuration
-      // For the current process, we need to check common installation paths
-      const possiblePaths = [
-        `${process.env.HOME}/.local/bin/opencode`,
-        `${process.env.HOME}/.opencode/bin/opencode`,
-        '/usr/local/bin/opencode',
-        '/opt/opencode/bin/opencode',
-      ]
-
-      const installedPath = possiblePaths.find((p) => {
-        try {
-          fs.accessSync(p, fs.constants.F_OK)
-          return true
-        } catch {
-          return false
-        }
-      })
-
-      if (!installedPath) {
+      // Check if it's now available
+      const newPath = `${process.env.HOME}/.bun/bin/shuvcode`
+      try {
+        fs.accessSync(newPath, fs.constants.X_OK)
+        process.env.OPENCODE_PATH = newPath
+      } catch {
         note(
-          'OpenCode was installed but may not be available in this session.\n' +
+          'shuvcode was installed but may not be available in this session.\n' +
             'Please restart your terminal and run this command again.',
           '⚠️  Restart Required',
         )
         process.exit(0)
       }
-
-      // For subsequent spawn calls in this session, we can use the full path
-      process.env.OPENCODE_PATH = installedPath
     } catch (error) {
-      s.stop('Failed to install OpenCode CLI')
+      s.stop('Failed to install shuvcode CLI')
       cliLogger.error(
         'Installation error:',
         error instanceof Error ? error.message : String(error),
       )
       process.exit(EXIT_NO_RESTART)
     }
+  } else if (installedPath) {
+    // Set the path for spawn calls
+    process.env.OPENCODE_PATH = installedPath
   }
 
   const db = getDatabase()
@@ -731,7 +779,10 @@ async function run({ restart, addChannels }: CliOptions) {
             guildId: targetGuild.id,
           })
         } catch (error) {
-          cliLogger.error(`Failed to create channels for ${path.basename(project.worktree)}:`, error)
+          cliLogger.error(
+            `Failed to create channels for ${path.basename(project.worktree)}:`,
+            error,
+          )
         }
       }
 
@@ -766,7 +817,9 @@ async function run({ restart, addChannels }: CliOptions) {
 
   if (registrableCommands.length > 0) {
     const commandList = registrableCommands
-      .map((cmd) => `  /${cmd.name}-cmd - ${cmd.description || 'No description'}`)
+      .map(
+        (cmd) => `  /${cmd.name}-cmd - ${cmd.description || 'No description'}`,
+      )
       .join('\n')
 
     note(
@@ -852,10 +905,11 @@ cli
     }
   })
 
-
-
 cli
-  .command('upload-to-discord [...files]', 'Upload files to a Discord thread for a session')
+  .command(
+    'upload-to-discord [...files]',
+    'Upload files to a Discord thread for a session',
+  )
   .option('-s, --session <sessionId>', 'OpenCode session ID')
   .action(async (files: string[], options: { session?: string }) => {
     try {
@@ -897,7 +951,9 @@ cli
         .get() as { app_id: string; token: string } | undefined
 
       if (!botRow) {
-        cliLogger.error('No bot credentials found. Run `kimaki` first to set up the bot.')
+        cliLogger.error(
+          'No bot credentials found. Run `kimaki` first to set up the bot.',
+        )
         process.exit(EXIT_NO_RESTART)
       }
 
@@ -908,9 +964,12 @@ cli
         const buffer = fs.readFileSync(file)
 
         const formData = new FormData()
-        formData.append('payload_json', JSON.stringify({
-          attachments: [{ id: 0, filename: path.basename(file) }]
-        }))
+        formData.append(
+          'payload_json',
+          JSON.stringify({
+            attachments: [{ id: 0, filename: path.basename(file) }],
+          }),
+        )
         formData.append('files[0]', new Blob([buffer]), path.basename(file))
 
         const response = await fetch(
@@ -918,10 +977,10 @@ cli
           {
             method: 'POST',
             headers: {
-              'Authorization': `Bot ${botRow.token}`,
+              Authorization: `Bot ${botRow.token}`,
             },
             body: formData,
-          }
+          },
         )
 
         if (!response.ok) {
@@ -946,8 +1005,6 @@ cli
       process.exit(EXIT_NO_RESTART)
     }
   })
-
-
 
 cli.help()
 cli.parse()

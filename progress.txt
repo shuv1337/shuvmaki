@@ -44,3 +44,16 @@
   - Typecheck: Pre-existing vitest errors only (no new issues from migration)
   - Tests: Pre-existing snapshot mismatches (unrelated)
   - Lint: No lint script available
+
+## Iteration 4 - 2026-01-11
+- **Verified**: Typecheck task - `bun tsc --noEmit` from discord directory
+- **Result**: **Source code compiles clean**
+- **Findings**:
+  - Only errors are 6 pre-existing vitest import errors in `.test.ts` files
+  - All non-test source code compiles without errors
+  - v2 SDK migration types are correct (session.prompt, session.command)
+- **Why**: Foundational gate - confirms v2 migration didn't break types, unblocks further work
+- **Feedback**:
+  - Typecheck: Passes for source (test files have pre-existing vitest dep issue)
+  - Tests: Pre-existing snapshot mismatches (formatting diffs, unrelated to changes)
+  - Lint: No lint script in package.json

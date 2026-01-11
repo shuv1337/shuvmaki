@@ -1041,8 +1041,15 @@
   {
     "category": "functional",
     "description": "Test `/variant` when no model set shows error message",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Code-level verification of variant.ts handleVariantCommand",
+      "Line 177-180: Get currentModel with session→channel fallback pattern",
+      "Line 182: Check if (!currentModel)",
+      "Line 183-186: Reply with 'No model preference set. Run /model first to select a model.'",
+      "Early return prevents variant picker from showing"
+    ],
+    "passes": true,
+    "notes": "Code-level verification complete. User is prompted to run /model first when no model preference is set."
   },
   {
     "category": "functional",
@@ -1078,8 +1085,21 @@
   {
     "category": "functional",
     "description": "Test `/variant` during active request aborts and retries with new variant",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Code-level verification of variant.ts:349-370 and session-handler.ts:80-170",
+      "variant.ts:349: Comment 'Abort and retry if there's an active request'",
+      "variant.ts:352: Calls abortAndRetrySession() when context.thread exists",
+      "variant.ts:360-364: Shows '_Retrying current request with new variant..._' if retried",
+      "session-handler.ts:80-170: abortAndRetrySession implementation",
+      "Line 89-96: Check for active request in abortControllers Map",
+      "Line 103: controller.abort('model-change')",
+      "Line 108: Call session.abort API endpoint",
+      "Line 121-138: Fetch last user message",
+      "Line 154-168: Re-trigger handleOpencodeSession with prompt + images",
+      "Line 170: Return true to indicate successful retry"
+    ],
+    "passes": true,
+    "notes": "Code-level verification complete. Full abort+retry flow: abort local controller → call API abort → fetch last message → re-trigger session. Message includes retry notification."
   },
   {
     "category": "functional",

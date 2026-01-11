@@ -189,3 +189,15 @@
   - Typecheck: Source compiles clean (pre-existing vitest errors in test files only)
   - Tests: Pre-existing snapshot mismatches (unrelated)
   - Lint: No lint script available
+
+## Iteration 13 - 2026-01-11
+- **Verified**: All catch blocks in new variant code have proper **logging**
+- **Files checked**:
+  - `discord/src/commands/variant.ts`: 2 catch blocks - both use `variantLogger.error()`
+  - `discord/src/commands/model.ts`: 4 catch blocks - all use `modelLogger.error()`
+- **Findings**: No silent catch blocks. All 6 catch blocks in new code log errors with context message.
+- **Why**: AGENTS.md mandates "never silently swallow errors. every catch block must log something" - verified compliance.
+- **Feedback**:
+  - Typecheck: Source compiles clean (pre-existing vitest errors in test files only)
+  - Tests: Pre-existing snapshot mismatches (unrelated to changes)
+  - Lint: No lint script available

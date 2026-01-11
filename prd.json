@@ -976,8 +976,17 @@
   {
     "category": "functional",
     "description": "Review all new code for silent catch blocks - add logging where missing",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Identified catch blocks in new files: variant.ts (2), model.ts (4 total, 1 new)",
+      "variant.ts:267 - variantLogger.error('Error loading variants:', error) - OK",
+      "variant.ts:367 - variantLogger.error('Error saving variant preference:', error) - OK",
+      "model.ts:269 - modelLogger.error('Error loading providers:', error) - OK",
+      "model.ts:401 - modelLogger.error('Error loading models:', error) - OK",
+      "model.ts:563 - modelLogger.error('Error saving model preference:', error) - OK",
+      "model.ts:663 - modelLogger.error('Error saving model+variant preference:', error) - OK"
+    ],
+    "passes": true,
+    "notes": "All catch blocks in new variant feature code have proper logging via variantLogger/modelLogger. No silent suppression found."
   },
   {
     "category": "functional",

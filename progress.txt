@@ -101,3 +101,17 @@
   - Typecheck: Source compiles clean (pre-existing vitest errors in test files only)
   - Tests: Pre-existing snapshot mismatches (unrelated to changes)
   - Lint: No lint script available
+
+## Iteration 8 - 2026-01-11
+- **Integrated**: Variant preferences into **session-handler.ts** API calls
+- **File**: `discord/src/session-handler.ts`
+- **Changes**:
+  - Added `getSessionVariant`, `getChannelVariant` imports from database.js (lines 16-17)
+  - Added `variantPreference` variable with session→channel fallback pattern (lines 788-793)
+  - Added `variant: variantPreference` to both `session.command` and `session.prompt` v2 API calls
+  - Added log statement: `[VARIANT] Using variant: ${variantPreference}`
+- **Why**: **Enables variants to work end-to-end** - once variant is stored via `/variant` or `/model` flow, it's now passed to API calls. High-impact with minimal change surface.
+- **Feedback**:
+  - Typecheck: Source compiles clean (pre-existing vitest errors in test files only)
+  - Tests: Pre-existing snapshot mismatches (unrelated)
+  - Lint: No lint script available

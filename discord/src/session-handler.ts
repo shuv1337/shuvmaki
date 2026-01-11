@@ -12,6 +12,8 @@ import {
   getChannelModel,
   getSessionAgent,
   getChannelAgent,
+  getSessionVariant,
+  getChannelVariant,
 } from './database.js'
 import {
   initializeOpencodeForDirectory,
@@ -782,6 +784,14 @@ export async function handleOpencodeSession({
       sessionLogger.log(`[AGENT] Using agent preference: ${agentPreference}`)
     }
 
+    // Get variant preference: session-level overrides channel-level
+    const variantPreference =
+      getSessionVariant(session.id) ||
+      (channelId ? getChannelVariant(channelId) : undefined)
+    if (variantPreference) {
+      sessionLogger.log(`[VARIANT] Using variant: ${variantPreference}`)
+    }
+
     // Use v2 client for session.prompt and session.command
     // v2 uses flat parameters with sessionID instead of path: { id: ... }
     const response = command
@@ -792,6 +802,7 @@ export async function handleOpencodeSession({
             command: command.name,
             arguments: command.arguments,
             agent: agentPreference,
+            variant: variantPreference,
           },
           { signal: abortController.signal },
         )
@@ -803,6 +814,7 @@ export async function handleOpencodeSession({
             system: getOpencodeSystemMessage({ sessionId: session.id }),
             model: modelParam,
             agent: agentPreference,
+            variant: variantPreference,
           },
           { signal: abortController.signal },
         )

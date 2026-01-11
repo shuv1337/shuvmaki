@@ -678,56 +678,73 @@
   {
     "category": "functional",
     "description": "Open `discord/src/session-handler.ts`",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": ["Read file to understand current implementation"],
+    "passes": true,
+    "notes": "File already has v2 client calls at lines 797-818, model/agent preference pattern at lines 761-783"
   },
   {
     "category": "functional",
     "description": "Import `getSessionVariant` and `getChannelVariant` from database.ts",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Added imports to existing database.js import block at lines 10-17"
+    ],
+    "passes": true,
+    "notes": "Added getSessionVariant and getChannelVariant to the import list"
   },
   {
     "category": "functional",
     "description": "Locate where model preference is read (session then channel fallback)",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": ["Found at lines 761-775 in processThreadRequest"],
+    "passes": true,
+    "notes": "Pattern: getSessionModel(session.id) || (channelId ? getChannelModel(channelId) : undefined)"
   },
   {
     "category": "functional",
     "description": "Add variant preference reading with same fallback pattern:",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Added variantPreference variable following same pattern after agentPreference block"
+    ],
+    "passes": true,
+    "notes": "getSessionVariant(session.id) || (channelId ? getChannelVariant(channelId) : undefined)"
   },
   {
     "category": "functional",
     "description": "Locate the v2 `session.prompt` call",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": ["Found at lines 808-818 in processThreadRequest"],
+    "passes": true,
+    "notes": "Located in ternary, second branch (non-command case)"
   },
   {
     "category": "functional",
     "description": "Add `variant: variantPreference` to the prompt call when present",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Added variant: variantPreference to session.prompt params object"
+    ],
+    "passes": true,
+    "notes": "v2 SDK accepts undefined gracefully - no conditional needed"
   },
   {
     "category": "functional",
     "description": "Locate the v2 `session.command` call",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": ["Found at lines 798-807 in processThreadRequest"],
+    "passes": true,
+    "notes": "Located in ternary, first branch (command case)"
   },
   {
     "category": "functional",
     "description": "Add `variant: variantPreference` to the command call when present",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Added variant: variantPreference to session.command params object"
+    ],
+    "passes": true,
+    "notes": "v2 SDK accepts undefined gracefully - no conditional needed"
   },
   {
     "category": "functional",
     "description": "Add log statement: `sessionLogger.log('[VARIANT] Using variant: ${variantPreference}')`",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": ["Added conditional log statement after variantPreference is set"],
+    "passes": true,
+    "notes": "Only logs when variantPreference is truthy, consistent with agent logging pattern"
   },
   {
     "category": "functional",

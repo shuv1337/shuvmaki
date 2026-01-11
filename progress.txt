@@ -16,3 +16,15 @@
   - Typecheck: Pre-existing vitest errors only (test files missing vitest dep)
   - Tests: Pre-existing snapshot mismatches (unrelated to changes)
   - Lint: No lint script available
+
+## Iteration 2 - 2026-01-11
+- **Verified**: Task 4 - `getOpencodeClientV2(directory)` returns typed client
+- **File**: `discord/src/opencode.ts:272-277`
+- **Findings**:
+  - Function exists and returns `OpencodeClientV2 | null`
+  - Type imported from `@opencode-ai/sdk/v2`
+  - Already in use in `session-handler.ts` (lines 10, 255)
+- **Why**: Foundational verification - all v2 migration depends on this client working
+- **Feedback**:
+  - Typecheck: Pre-existing vitest errors only (no new issues)
+  - No code changes needed - verification task only

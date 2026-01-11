@@ -20,8 +20,14 @@
   {
     "category": "functional",
     "description": "Verify `getOpencodeClientV2(directory)` returns typed client in `opencode.ts`",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Verified function exists at opencode.ts:272-277",
+      "Function signature: getOpencodeClientV2(directory: string): OpencodeClientV2 | null",
+      "Type imported correctly from @opencode-ai/sdk/v2",
+      "Already imported and used in session-handler.ts:10,255"
+    ],
+    "passes": true,
+    "notes": "Function returns typed OpencodeClientV2 client from cached server map. Returns null if no server initialized for directory."
   },
   {
     "category": "functional",

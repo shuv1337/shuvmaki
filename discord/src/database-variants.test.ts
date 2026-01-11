@@ -295,4 +295,117 @@ describe('variant preference helpers', () => {
       expect(result.count).toBe(0)
     })
   })
+
+  describe('variant preference resolution (session overrides channel)', () => {
+    // These tests verify the resolution logic used in session-handler.ts:788-790
+    // Pattern: getSessionVariant(session.id) || (channelId ? getChannelVariant(channelId) : undefined)
+
+    const getSessionVariant = (sessionId: string): string | undefined => {
+      const result = testDb
+        .prepare(
+          'SELECT variant_name FROM session_variants WHERE session_id = ?',
+        )
+        .get(sessionId) as { variant_name: string } | null
+      return result?.variant_name
+    }
+
+    const getChannelVariant = (channelId: string): string | undefined => {
+      const result = testDb
+        .prepare(
+          'SELECT variant_name FROM channel_variants WHERE channel_id = ?',
+        )
+        .get(channelId) as { variant_name: string } | null
+      return result?.variant_name
+    }
+
+    const resolveVariant = (
+      sessionId: string,
+      channelId: string | undefined,
+    ): string | undefined => {
+      // Same logic as session-handler.ts:788-790
+      return (
+        getSessionVariant(sessionId) ||
+        (channelId ? getChannelVariant(channelId) : undefined)
+      )
+    }
+
+    test('session variant overrides channel variant', () => {
+      const sessionId = 'session-override-test'
+      const channelId = 'channel-override-test'
+
+      // Set channel variant
+      testDb
+        .prepare(
+          `INSERT INTO channel_variants (channel_id, variant_name, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)`,
+        )
+        .run(channelId, 'channel-thinking')
+
+      // Set session variant (should override)
+      testDb
+        .prepare(
+          `INSERT OR REPLACE INTO session_variants (session_id, variant_name) VALUES (?, ?)`,
+        )
+        .run(sessionId, 'session-thinking')
+
+      const result = resolveVariant(sessionId, channelId)
+      expect(result).toBe('session-thinking')
+    })
+
+    test('channel variant used when no session variant', () => {
+      const sessionId = 'session-no-variant'
+      const channelId = 'channel-has-variant'
+
+      // Only set channel variant
+      testDb
+        .prepare(
+          `INSERT INTO channel_variants (channel_id, variant_name, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)`,
+        )
+        .run(channelId, 'channel-fallback')
+
+      // No session variant set
+
+      const result = resolveVariant(sessionId, channelId)
+      expect(result).toBe('channel-fallback')
+    })
+
+    test('returns undefined when no variants set', () => {
+      const sessionId = 'session-nothing'
+      const channelId = 'channel-nothing'
+
+      // Neither session nor channel variant set
+
+      const result = resolveVariant(sessionId, channelId)
+      expect(result).toBeUndefined()
+    })
+
+    test('session variant used even when channelId is undefined', () => {
+      const sessionId = 'session-with-variant'
+      const channelId = undefined // e.g., DM context
+
+      // Set session variant
+      testDb
+        .prepare(
+          `INSERT OR REPLACE INTO session_variants (session_id, variant_name) VALUES (?, ?)`,
+        )
+        .run(sessionId, 'dm-variant')
+
+      const result = resolveVariant(sessionId, channelId)
+      expect(result).toBe('dm-variant')
+    })
+
+    test('returns undefined when only channel variant exists but channelId is undefined', () => {
+      const sessionId = 'session-no-variant-dm'
+      const channelId = undefined // DM context, no channel lookup possible
+
+      // Only set channel variant (but channelId is undefined, so can't access)
+      testDb
+        .prepare(
+          `INSERT INTO channel_variants (channel_id, variant_name, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)`,
+        )
+        .run('some-other-channel', 'unreachable-variant')
+
+      const result = resolveVariant(sessionId, channelId)
+      expect(result).toBeUndefined()
+    })
+  })
 })

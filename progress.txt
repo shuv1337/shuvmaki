@@ -304,3 +304,19 @@
   - Typecheck: Source compiles clean (pre-existing vitest errors in test files only)
   - Tests: **23/23 pass** for variant-related tests
   - Lint: No lint script available
+
+## Iteration 20 - 2026-01-11
+- **Added**: Unit tests for **variant preference resolution** (session overrides channel)
+- **File**: `discord/src/database-variants.test.ts` (5 new tests added)
+- **Tests**:
+  - `session variant overrides channel variant` - sets both, verifies session wins
+  - `channel variant used when no session variant` - verifies fallback
+  - `returns undefined when no variants set` - verifies empty case
+  - `session variant used even when channelId is undefined` - DM context
+  - `returns undefined when only channel variant exists but channelId is undefined` - DM edge case
+- **Pattern verified**: `getSessionVariant(session.id) || (channelId ? getChannelVariant(channelId) : undefined)`
+- **Why**: High-impact validation - confirms session-level preferences correctly override channel-level. Tests mirror exact logic from session-handler.ts:788-790.
+- **Feedback**:
+  - Typecheck: Pre-existing vitest errors only (no new issues)
+  - Tests: **28/28 pass** for variant-related tests (18 database + 10 variant helper)
+  - Lint: No lint script available

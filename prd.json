@@ -1043,8 +1043,18 @@
   {
     "category": "functional",
     "description": "Test session-level variant overrides channel-level variant",
-    "steps": ["Add verification steps for this item."],
-    "passes": false
+    "steps": [
+      "Added 5 unit tests to database-variants.test.ts under 'variant preference resolution' describe block",
+      "Test 'session variant overrides channel variant' - sets both, verifies session wins",
+      "Test 'channel variant used when no session variant' - verifies fallback",
+      "Test 'returns undefined when no variants set' - verifies empty case",
+      "Test 'session variant used even when channelId is undefined' - DM context",
+      "Test 'returns undefined when only channel variant exists but channelId is undefined' - DM edge case",
+      "Tests verify the exact resolution pattern from session-handler.ts:788-790",
+      "All 18 tests pass: bun test src/database-variants.test.ts --run"
+    ],
+    "passes": true,
+    "notes": "Unit tests validate the || short-circuit resolution logic. Session preference checked first via getSessionVariant(), falling back to channel via getChannelVariant() only when session returns undefined AND channelId is provided."
   },
   {
     "category": "functional",

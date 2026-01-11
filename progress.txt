@@ -338,3 +338,18 @@
   - Typecheck: Pre-existing vitest errors only
   - Tests: 28/28 pass
   - Lint: No lint script available
+
+## Iteration 22 - 2026-01-11
+- **Verified**: Variant field included in **prompt/command API calls** via code inspection
+- **File**: `discord/src/session-handler.ts:785-820`
+- **Logic**:
+  - Line 788-790: `variantPreference` resolved with session→channel fallback
+  - Line 791-793: Conditional log `[VARIANT] Using variant: ${variantPreference}`
+  - Line 805: `variant: variantPreference` passed to `clientV2.session.command()`
+  - Line 817: `variant: variantPreference` passed to `clientV2.session.prompt()`
+- **SDK types**: Both methods accept `variant?: string` per sdk.gen.d.ts
+- **Why**: Core integration point - this is how user's variant preference reaches the AI. Log enables debugging via kimaki.log.
+- **Feedback**:
+  - Typecheck: Pre-existing vitest errors only
+  - Tests: 28/28 pass
+  - Lint: No lint script available

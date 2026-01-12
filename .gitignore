@@ -12,3 +12,5 @@ useraudio
 discord-audio-logs
 tmp
 CONTEXT/
+.ralph-*
+plan.md

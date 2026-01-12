@@ -354,6 +354,7 @@ export async function handleVariantSelectMenu(
           sessionId: context.sessionId,
           thread: context.thread,
           projectDirectory: context.dir,
+          channelId: context.channelId,
         })
       }
 

@@ -573,6 +573,7 @@ export async function handleModelSelectMenu(
           sessionId: context.sessionId,
           thread: context.thread,
           projectDirectory: context.dir,
+          channelId: context.channelId,
         })
       }
 
@@ -672,6 +673,7 @@ export async function handleModelVariantSelectMenu(
           sessionId: context.sessionId,
           thread: context.thread,
           projectDirectory: context.dir,
+          channelId: context.channelId,
         })
       }
 

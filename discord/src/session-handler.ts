@@ -81,10 +81,12 @@ export async function abortAndRetrySession({
   sessionId,
   thread,
   projectDirectory,
+  channelId,
 }: {
   sessionId: string
   thread: ThreadChannel
   projectDirectory: string
+  channelId?: string
 }): Promise<boolean> {
   const controller = abortControllers.get(sessionId)
 
@@ -157,6 +159,7 @@ export async function abortAndRetrySession({
       thread,
       projectDirectory,
       images,
+      channelId,
     }).catch(async (e) => {
       sessionLogger.error(`[ABORT+RETRY] Failed to retry:`, e)
       const errorMsg = e instanceof Error ? e.message : String(e)

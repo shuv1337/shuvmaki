@@ -673,7 +673,7 @@ async function run({ restart, addChannels }: CliOptions) {
     note(channelList, 'Existing Kimaki Channels')
   }
 
-  s.start('Starting OpenCode server...')
+  s.start('Starting shuvcode server...')
 
   const currentDir = process.cwd()
   let getClient = await initializeOpencodeForDirectory(currentDir)

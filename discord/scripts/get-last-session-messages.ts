@@ -56,8 +56,8 @@ async function getLastSessionMessages() {
   const port = await getOpenPort()
   const baseUrl = `http://localhost:${port}`
 
-  console.log(`Starting OpenCode server on port ${port}...`)
-  
+  console.log(`Starting shuvcode server on port ${port}...`)
+
   const opencodeCommand = process.env.OPENCODE_PATH || 'opencode'
   const directory = process.cwd()
 
@@ -142,19 +142,18 @@ async function getLastSessionMessages() {
     const messagesResponse = await client.session.messages({
       path: { id: latestSession.id },
     })
-    
+
     if (!messagesResponse.data) {
       console.error('Failed to fetch session messages')
       return
     }
-    
+
     const messages = messagesResponse.data
     console.log(`Found ${messages.length} message(s) in the session\n`)
-    
+
     // Log the messages as prettified JSON
     console.log('=== Session Messages (JSON) ===\n')
     console.log(JSON.stringify(messages, null, 2))
-
   } catch (error) {
     console.error('Error fetching session messages:', error)
     serverProcess.kill()

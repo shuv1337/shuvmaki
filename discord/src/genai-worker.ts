@@ -4,13 +4,14 @@
 
 import { parentPort, threadId } from 'node:worker_threads'
 import { createWriteStream, type WriteStream } from 'node:fs'
-import { mkdir } from 'node:fs/promises'
 import path from 'node:path'
+import * as errore from 'errore'
 import { Resampler } from '@purinton/resampler'
 import * as prism from 'prism-media'
 import { startGenAiSession } from './genai.js'
 import type { Session } from '@google/genai'
 import { getTools } from './tools.js'
+import { mkdir } from 'node:fs/promises'
 import type { WorkerInMessage, WorkerOutMessage } from './worker-types.js'
 import { createLogger } from './logger.js'
 
@@ -40,12 +41,7 @@ process.on('uncaughtException', (error) => {
 })
 
 process.on('unhandledRejection', (reason, promise) => {
-  workerLogger.error(
-    'Unhandled rejection in worker:',
-    reason,
-    'at promise:',
-    promise,
-  )
+  workerLogger.error('Unhandled rejection in worker:', reason, 'at promise:', promise)
   sendError(`Worker unhandled rejection: ${reason}`)
 })
 
@@ -130,33 +126,30 @@ async function createAssistantAudioLogStream(
   if (!process.env.DEBUG) return null
 
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
-  const audioDir = path.join(
-    process.cwd(),
-    'discord-audio-logs',
-    guildId,
-    channelId,
-  )
+  const audioDir = path.join(process.cwd(), 'discord-audio-logs', guildId, channelId)
 
-  try {
-    await mkdir(audioDir, { recursive: true })
-
-    // Create stream for assistant audio (24kHz mono s16le PCM)
-    const outputFileName = `assistant_${timestamp}.24.pcm`
-    const outputFilePath = path.join(audioDir, outputFileName)
-    const outputAudioStream = createWriteStream(outputFilePath)
-
-    // Add error handler to prevent crashes
-    outputAudioStream.on('error', (error) => {
-      workerLogger.error(`Assistant audio log stream error:`, error)
-    })
-
-    workerLogger.log(`Created assistant audio log: ${outputFilePath}`)
-
-    return outputAudioStream
-  } catch (error) {
-    workerLogger.error(`Failed to create audio log directory:`, error)
+  const mkdirError = await errore.tryAsync({
+    try: () => mkdir(audioDir, { recursive: true }),
+    catch: (e) => e as Error,
+  })
+  if (errore.isError(mkdirError)) {
+    workerLogger.error(`Failed to create audio log directory:`, mkdirError.message)
     return null
   }
+
+  // Create stream for assistant audio (24kHz mono s16le PCM)
+  const outputFileName = `assistant_${timestamp}.24.pcm`
+  const outputFilePath = path.join(audioDir, outputFileName)
+  const outputAudioStream = createWriteStream(outputFilePath)
+
+  // Add error handler to prevent crashes
+  outputAudioStream.on('error', (error) => {
+    workerLogger.error(`Assistant audio log stream error:`, error)
+  })
+
+  workerLogger.log(`Created assistant audio log: ${outputFilePath}`)
+
+  return outputAudioStream
 }
 
 // Handle encoded Opus packets
@@ -252,16 +245,13 @@ parentPort.on('message', async (message: WorkerInMessage) => {
         workerLogger.log(`Initializing with directory:`, message.directory)
 
         // Create audio log stream for assistant audio
-        audioLogStream = await createAssistantAudioLogStream(
-          message.guildId,
-          message.channelId,
-        )
+        audioLogStream = await createAssistantAudioLogStream(message.guildId, message.channelId)
 
         // Start packet sending interval
         startPacketSending()
 
         // Get tools for the directory
-        const { tools } = await getTools({
+        const tools = await getTools({
           directory: message.directory,
           onMessageCompleted: (params) => {
             parentPort!.postMessage({
@@ -359,8 +349,6 @@ parentPort.on('message', async (message: WorkerInMessage) => {
     }
   } catch (error) {
     workerLogger.error(`Error handling message:`, error)
-    sendError(
-      error instanceof Error ? error.message : 'Unknown error in worker',
-    )
+    sendError(error instanceof Error ? error.message : 'Unknown error in worker')
   }
 })

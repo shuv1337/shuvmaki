@@ -69,6 +69,50 @@ To control multiple machines:
 
 Each channel shows which bot (machine) it's connected to. You can have channels from different machines in the same server, controlled by different bots.
 
+## Running Multiple Instances
+
+By default, Kimaki stores its data in `~/.kimaki`. To run multiple bot instances on the same machine (e.g., for different teams or projects), use the `--data-dir` option:
+
+```bash
+# Instance 1 - uses default ~/.kimaki
+npx -y kimaki@latest
+
+# Instance 2 - separate data directory
+npx -y kimaki@latest --data-dir ~/work-bot
+
+# Instance 3 - another separate instance
+npx -y kimaki@latest --data-dir ~/personal-bot
+```
+
+Each instance has its own:
+- **Database** - Bot credentials, channel mappings, session history
+- **Projects directory** - Where `/create-new-project` creates new folders
+- **Lock port** - Derived from the data directory path, so instances don't conflict
+
+This lets you run completely isolated bots on the same machine, each with their own Discord app and configuration.
+
+## Multiple Discord Servers
+
+A single Kimaki instance can serve multiple Discord servers. Install the bot in each server using the install URL shown during setup, then add project channels to each server.
+
+### Method 1: Use `/add-project` command
+
+1. Run `npx kimaki` once to set up the bot
+2. Install the bot in both servers using the install URL
+3. In **Server A**: run `/add-project` and select your project
+4. In **Server B**: run `/add-project` and select your project
+
+The `/add-project` command creates channels in whichever server you run it from.
+
+### Method 2: Re-run CLI with `--add-channels`
+
+1. Run `npx kimaki` - set up bot, install in both servers, create channels in first server
+2. Run `npx kimaki --add-channels` - select projects for the second server
+
+The setup wizard lets you pick one server at a time.
+
+You can even link the same project to channels in multiple servers - both will point to the same directory on your machine.
+
 ## Best Practices
 
 **Create a dedicated Discord server for your agents.** This keeps your coding sessions separate from other servers and gives you full control over permissions.
@@ -130,23 +174,23 @@ Just send a message in any channel linked to a project. Shuvmaki handles the res
 
 ### Slash Commands
 
-| Command                      | Description                                                |
-| ---------------------------- | ---------------------------------------------------------- |
-| `/session <prompt>`          | Start a new session with an initial prompt                 |
-| `/resume <session>`          | Resume a previous session (with autocomplete)              |
-| `/abort`                     | Stop the current running session                           |
-| `/add-project <project>`     | Create channels for an existing shuvcode project           |
-| `/create-new-project <name>` | Create a new project folder and start a session            |
-| `/accept`                    | Accept a permission request (file edit, command execution) |
-| `/accept-always`             | Accept and auto-approve similar future requests            |
-| `/reject`                    | Reject a permission request                                |
-| `/model`                     | Change the AI model for this channel                       |
-| `/variant`                   | Select a model variant (e.g., thinking modes)              |
-| `/agent`                     | Change the agent for this channel                          |
-| `/share`                     | Generate a public URL to share the current session         |
-| `/fork`                      | Fork the session from a previous message                   |
-| `/queue <message>`           | Queue a message to send after current response finishes    |
-| `/clear-queue`               | Clear all queued messages in this thread                   |
+| Command | Description |
+|---------|-------------|
+| `/session <prompt>` | Start a new session with an initial prompt |
+| `/resume <session>` | Resume a previous session (with autocomplete) |
+| `/abort` | Stop the current running session |
+| `/add-project <project>` | Create channels for an existing OpenCode project |
+| `/remove-project <project>` | Remove Discord channels for a project |
+| `/create-new-project <name>` | Create a new project folder and start a session |
+| `/model` | Change the AI model for this channel or session |
+| `/variant` | Select a model variant (e.g., thinking modes) |
+| `/agent` | Change the agent for this channel or session |
+| `/share` | Generate a public URL to share the current session |
+| `/fork` | Fork the session from a previous message |
+| `/queue <message>` | Queue a message to send after current response finishes |
+| `/clear-queue` | Clear all queued messages in this thread |
+| `/undo` | Undo the last assistant message (revert file changes) |
+| `/redo` | Redo the last undone message |
 
 ### CLI Commands
 
@@ -154,13 +198,83 @@ Just send a message in any channel linked to a project. Shuvmaki handles the res
 # Start the bot (interactive setup on first run)
 cd shuvmaki/discord && bun run dev
 
-# Upload files to a Discord thread
+# Upload files to a Discord thread (local CLI)
 cd shuvmaki/discord && bun src/cli.ts upload-to-discord --session <session-id> <file1> [file2...]
+
+# Upload files to a Discord thread (published CLI)
+npx -y kimaki upload-to-discord --session <session-id> <file1> [file2...]
+
+# Start a session programmatically (useful for CI/automation)
+npx -y kimaki send --channel <channel-id> --prompt "your prompt"
+
+# Send notification without starting AI session (reply to start session later)
+npx -y kimaki send --channel <channel-id> --prompt "User cancelled subscription" --notify-only
 ```
+
+## Programmatically Start Sessions
+
+You can start Kimaki sessions from CI pipelines, cron jobs, or any automation. The `send` command creates a Discord thread, and the running bot on your machine picks it up.
+
+### Environment Variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `KIMAKI_BOT_TOKEN` | Yes (in CI) | Discord bot token |
+
+### CLI Options
+
+```bash
+npx -y kimaki send \
+  --channel <channel-id>  # Required: Discord channel ID
+  --prompt <prompt>       # Required: Message content
+  --name <name>           # Optional: Thread name (defaults to prompt preview)
+  --app-id <app-id>       # Optional: Bot application ID for validation
+  --notify-only           # Optional: Create notification thread without starting AI session
+```
+
+### Example: GitHub Actions on New Issues
+
+This workflow starts a Kimaki session whenever a new issue is opened:
+
+```yaml
+# .github/workflows/investigate-issues.yml
+name: Investigate New Issues
+
+on:
+  issues:
+    types: [opened]
+
+jobs:
+  investigate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Start Kimaki Session
+        env:
+          KIMAKI_BOT_TOKEN: ${{ secrets.KIMAKI_BOT_TOKEN }}
+        run: |
+          npx -y kimaki send \
+            --channel "1234567890123456789" \
+            --prompt "Investigate issue ${{ github.event.issue.html_url }} using gh cli. Try fixing it in a new worktree ./${{ github.event.issue.number }}" \
+            --name "Issue #${{ github.event.issue.number }}"
+```
+
+**Setup:**
+1. Add `KIMAKI_BOT_TOKEN` to your repository secrets (Settings → Secrets → Actions)
+2. Replace `1234567890123456789` with your Discord channel ID (right-click channel → Copy Channel ID)
+3. Make sure the Kimaki bot is running on your machine
+
+### How It Works
+
+1. **CI runs `send`** → Creates a Discord thread with your prompt
+2. **Running bot detects thread** → Automatically starts a session
+3. **Bot starts OpenCode session** → Uses the prompt from the thread
+4. **AI investigates** → Runs on your machine with full codebase access
+
+Use `--notify-only` for notifications that don't need immediate AI response (e.g., subscription events). Reply to the thread later to start a session with the notification as context.
 
 ## How It Works
 
-**SQLite Database** - Shuvmaki stores state in `~/.kimaki/discord-sessions.db`. This maps Discord threads to shuvcode sessions, channels to directories, and stores your bot credentials.
+**SQLite Database** - Shuvmaki stores state in `<data-dir>/discord-sessions.db` (default: `~/.kimaki/discord-sessions.db`). This maps Discord threads to shuvcode sessions, channels to directories, and stores your bot credentials. Use `--data-dir` to change the location.
 
 **Shuvcode Servers** - When you message a channel, Shuvmaki spawns (or reuses) a shuvcode server for that project directory. The server handles the actual AI coding session.
 
@@ -174,7 +288,7 @@ cd shuvmaki/discord && bun src/cli.ts upload-to-discord --session <session-id> <
 
 **Graceful Restart** - Send `SIGUSR2` to restart the bot with new code without losing connections.
 
-## Model Configuration
+## Model & Agent Configuration
 
 Set the AI model in your project's `opencode.json` (shuvcode uses the same config format):
 
@@ -193,13 +307,17 @@ Format: `provider/model-name`
 - `openai/gpt-4o` - GPT-4o
 - `google/gemini-2.5-pro` - Gemini 2.5 Pro
 
-Or use the `/model` command in Discord to change models per channel.
+Or use these Discord commands to change settings per channel/session:
+- `/model` - Select a different AI model
+- `/agent` - Select a different agent (if you have multiple agents configured in your project)
+- `/variant` - Select a model variant (e.g., thinking modes)
 
 ## Differences from Kimaki
 
 Shuvmaki is a fork of [kimaki](https://github.com/remorses/kimaki) with the following changes:
 
 - **Shuvcode Integration** - Connects to [shuvcode](https://github.com/shuv1337/shuvcode) servers instead of OpenCode
+- **External Server Support** - Set `SHUVCODE_SERVER_URL` to connect to an existing shuvcode server
 - **v2 SDK Support** - Uses the shuvcode v2 SDK for improved API communication
 - **Model Variants** - New `/variant` command to select model-specific configurations (e.g., thinking modes)
 - **Variant Picker in /model** - When selecting a model that has variants, automatically shows a variant picker

@@ -1,5 +1,120 @@
 # Changelog
 
+## 0.4.39
+
+### Patch Changes
+
+- fix **0% token usage** race condition by fetching from API instead of relying on cached values
+- display **subtask events** with indexed labels (explore-1, explore-2) for better tracking
+- **filter hidden agents** from agent lists
+- adopt **errore typed errors** across discord bot for better error handling
+
+## 0.4.38
+
+### Patch Changes
+
+- fix **duplicate "kimaki"** in category names - now creates "Kimaki" instead of "Kimaki kimaki" when bot is named kimaki
+
+## 0.4.37
+
+### Patch Changes
+
+- rename `start-session` → **`send`** command (alias kept for backwards compat)
+- add **`--notify-only`** flag to create notification threads without starting AI session
+- add **`app_id`** column to channel_directories for multi-bot support
+- fix **JS number precision loss** for large Discord IDs in CLI arguments
+- add **subfolder lookup** - walks up parent directories to find closest registered project
+- fix **notification thread replies** to start new session with notification as context
+
+## 0.4.36
+
+### Patch Changes
+
+- add **--project** option to `start-session` CLI command as alternative to `--channel`
+- add **/remove-project** command to delete channels for a project from Discord
+- add **agent** option to `/session` command for starting sessions with specific agent
+- fix: use first option as **placeholder** in question tool dropdowns
+- fix: limit Discord **command names to 32 characters**
+- add **keep-running instructions** to CLI setup outro
+
+## 0.4.35
+
+### Patch Changes
+
+- use **opencode from PATH** instead of hardcoded `~/.opencode/bin/opencode` path
+
+## 0.4.34
+
+### Patch Changes
+
+- fix **numbered list code block unnesting** to avoid repeating numbers
+- **send text parts immediately** when complete (time.end set)
+- don't show typing indicator on question tool prompts
+- instruct model to use **question tool on session end**
+- fix(cli): **sanitize command names** by replacing colons with hyphens
+
+## 0.4.33
+
+### Patch Changes
+
+- use **digit-with-period unicode** (⒈⒉⒊) for todo numbers instead of parenthesized digits
+- add **heading depth limiter** for Discord markdown (converts h4+ to h3)
+
+## 0.4.32
+
+### Patch Changes
+
+- feat: **flush pending text** before tool calls - ensures LLM text is shown before tools start
+- feat: **show token usage** for large tool outputs (>3k tokens) with context percentage
+
+## 0.4.31
+
+### Patch Changes
+
+- feat: **auto-create Kimaki role** on CLI startup for easier permission management
+- feat: add **--install-url** CLI option to print bot invite URL without starting bot
+- feat: **unnest code blocks from lists** for Discord compatibility
+- perf: **parallelize CLI startup** operations for faster boot
+- fix: **cancel pending question** when user sends new message
+- fix: **flush pending text** before showing question dropdowns
+- fix: **reply with helpful message** when user lacks Kimaki role
+- fix: move **Kimaki role to bottom** position for easier assignment
+- fix: prevent **infinite loop** in splitLongLine with small maxLength
+- fix: context usage rendering with empty diamond symbol
+
+## 0.4.30
+
+### Patch Changes
+
+- add **start-session** CLI command to programmatically create Discord threads and start sessions
+- support **KIMAKI_BOT_TOKEN** env var for headless/CI usage
+- add **ThreadCreate** handler to detect bot-initiated sessions with magic prefix
+- add **channelId** to system prompt for session context
+- add GitHub Actions example for automatic issue investigation
+- docs: update README command table with /agent, /undo, /redo
+
+## 0.4.29
+
+### Patch Changes
+
+- add **--data-dir** option for running multiple bot instances with separate databases
+- **abbreviate paths** in project selection with `~` for home directory
+- **filter out** `opencode-test-*` projects from channel creation lists
+- docs: add multiple Discord servers section to README
+
+## 0.4.28
+
+### Patch Changes
+
+- fix **Accept Always** not persisting - use v2 API (`permission.reply`) instead of deprecated v1 API
+
+## 0.4.27
+
+### Patch Changes
+
+- replace `/accept`, `/accept-always`, `/reject` commands with **dropdown menu** for permission requests
+- show Accept, Accept Always, and Deny options in a single dropdown
+
 ## 0.4.26
 
 ### Patch Changes

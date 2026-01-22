@@ -9,7 +9,7 @@ import {
   type ThreadChannel,
 } from 'discord.js'
 import crypto from 'node:crypto'
-import { sendThreadMessage } from '../discord-utils.js'
+import { sendThreadMessage, NOTIFY_MESSAGE_FLAGS } from '../discord-utils.js'
 import { getOpencodeClientV2 } from '../opencode.js'
 import { createLogger } from '../logger.js'
 
@@ -95,9 +95,10 @@ export async function showAskUserQuestionDropdowns({
       },
     ]
 
+    const placeholder = options.find((x) => x.label)?.label || 'Select an option'
     const selectMenu = new StringSelectMenuBuilder()
       .setCustomId(`ask_question:${contextHash}:${i}`)
-      .setPlaceholder(`Select an option`)
+      .setPlaceholder(placeholder)
       .addOptions(options)
 
     // Enable multi-select if the question supports it
@@ -106,18 +107,16 @@ export async function showAskUserQuestionDropdowns({
       selectMenu.setMaxValues(options.length)
     }
 
-    const actionRow =
-      new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(selectMenu)
+    const actionRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(selectMenu)
 
     await thread.send({
       content: `**${q.header}**\n${q.question}`,
       components: [actionRow],
+      flags: NOTIFY_MESSAGE_FLAGS,
     })
   }
 
-  logger.log(
-    `Showed ${input.questions.length} question dropdown(s) for session ${sessionId}`,
-  )
+  logger.log(`Showed ${input.questions.length} question dropdown(s) for session ${sessionId}`)
 }
 
 /**
@@ -198,30 +197,22 @@ export async function handleAskQuestionSelectMenu(
  * Submit all collected answers back to the OpenCode session.
  * Uses the question.reply API to provide answers to the waiting tool.
  */
-async function submitQuestionAnswers(
-  context: PendingQuestionContext,
-): Promise<void> {
+async function submitQuestionAnswers(context: PendingQuestionContext): Promise<void> {
   try {
-    // Build answers array: each element is an array of selected labels for that question
-    const answersPayload = context.questions.map((_, i) => {
-      return context.answers[i] || []
-    })
-
-    // Reply to the question using v2 SDK
     const clientV2 = getOpencodeClientV2(context.directory)
     if (!clientV2) {
       throw new Error('OpenCode server not found for directory')
     }
 
-    const { error } = await clientV2.question.reply({
-      requestID: context.requestId,
-      directory: context.directory,
-      answers: answersPayload,
+    // Build answers array: each element is an array of selected labels for that question
+    const answers = context.questions.map((_, i) => {
+      return context.answers[i] || []
     })
 
-    if (error) {
-      throw new Error(`Failed to reply to question: ${error}`)
-    }
+    await clientV2.question.reply({
+      requestID: context.requestId,
+      answers,
+    })
 
     logger.log(
       `Submitted answers for question ${context.requestId} in session ${context.sessionId}`,
@@ -256,11 +247,7 @@ export function parseAskUserQuestionTool(part: {
 
   const input = part.state?.input as AskUserQuestionInput | undefined
 
-  if (
-    !input?.questions ||
-    !Array.isArray(input.questions) ||
-    input.questions.length === 0
-  ) {
+  if (!input?.questions || !Array.isArray(input.questions) || input.questions.length === 0) {
     return null
   }
 
@@ -277,4 +264,50 @@ export function parseAskUserQuestionTool(part: {
   }
 
   return input
+}
+
+/**
+ * Cancel a pending question for a thread (e.g., when user sends a new message).
+ * Sends cancellation response to OpenCode so the session can continue.
+ */
+export async function cancelPendingQuestion(threadId: string): Promise<boolean> {
+  // Find pending question for this thread
+  let contextHash: string | undefined
+  let context: PendingQuestionContext | undefined
+  for (const [hash, ctx] of pendingQuestionContexts) {
+    if (ctx.thread.id === threadId) {
+      contextHash = hash
+      context = ctx
+      break
+    }
+  }
+
+  if (!contextHash || !context) {
+    return false
+  }
+
+  try {
+    const clientV2 = getOpencodeClientV2(context.directory)
+    if (!clientV2) {
+      throw new Error('OpenCode server not found for directory')
+    }
+
+    // Preserve already-answered questions, mark unanswered as cancelled
+    const answers = context.questions.map((_, i) => {
+      return context.answers[i] || ['(cancelled - user sent new message)']
+    })
+
+    await clientV2.question.reply({
+      requestID: context.requestId,
+      answers,
+    })
+
+    logger.log(`Cancelled question ${context.requestId} due to new user message`)
+  } catch (error) {
+    logger.error('Failed to cancel question:', error)
+  }
+
+  // Clean up regardless of whether the API call succeeded
+  pendingQuestionContexts.delete(contextHash)
+  return true
 }

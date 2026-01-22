@@ -1,7 +1,7 @@
 // Tests for buildVariantOptions helper function
 // Validates: 24+Default limit, disabled filtering, alphabetical sorting, description handling
 
-import { describe, test, expect } from 'bun:test'
+import { describe, test, expect } from 'vitest'
 import { buildVariantOptions } from './variant.js'
 
 describe('buildVariantOptions', () => {

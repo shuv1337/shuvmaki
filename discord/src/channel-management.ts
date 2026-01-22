@@ -2,12 +2,7 @@
 // Creates and manages Kimaki project channels (text + voice pairs),
 // extracts channel metadata from topic tags, and ensures category structure.
 
-import {
-  ChannelType,
-  type CategoryChannel,
-  type Guild,
-  type TextChannel,
-} from 'discord.js'
+import { ChannelType, type CategoryChannel, type Guild, type TextChannel } from 'discord.js'
 import path from 'node:path'
 import { getDatabase } from './database.js'
 import { extractTagsArrays } from './xml.js'
@@ -16,17 +11,17 @@ export async function ensureKimakiCategory(
   guild: Guild,
   botName?: string,
 ): Promise<CategoryChannel> {
-  const categoryName = botName ? `Kimaki ${botName}` : 'Kimaki'
+  // Skip appending bot name if it's already "kimaki" to avoid "Kimaki kimaki"
+  const isKimakiBot = botName?.toLowerCase() === 'kimaki'
+  const categoryName = botName && !isKimakiBot ? `Kimaki ${botName}` : 'Kimaki'
 
-  const existingCategory = guild.channels.cache.find(
-    (channel): channel is CategoryChannel => {
-      if (channel.type !== ChannelType.GuildCategory) {
-        return false
-      }
+  const existingCategory = guild.channels.cache.find((channel): channel is CategoryChannel => {
+    if (channel.type !== ChannelType.GuildCategory) {
+      return false
+    }
 
-      return channel.name.toLowerCase() === categoryName.toLowerCase()
-    },
-  )
+    return channel.name.toLowerCase() === categoryName.toLowerCase()
+  })
 
   if (existingCategory) {
     return existingCategory
@@ -42,17 +37,17 @@ export async function ensureKimakiAudioCategory(
   guild: Guild,
   botName?: string,
 ): Promise<CategoryChannel> {
-  const categoryName = botName ? `Kimaki Audio ${botName}` : 'Kimaki Audio'
+  // Skip appending bot name if it's already "kimaki" to avoid "Kimaki Audio kimaki"
+  const isKimakiBot = botName?.toLowerCase() === 'kimaki'
+  const categoryName = botName && !isKimakiBot ? `Kimaki Audio ${botName}` : 'Kimaki Audio'
 
-  const existingCategory = guild.channels.cache.find(
-    (channel): channel is CategoryChannel => {
-      if (channel.type !== ChannelType.GuildCategory) {
-        return false
-      }
+  const existingCategory = guild.channels.cache.find((channel): channel is CategoryChannel => {
+    if (channel.type !== ChannelType.GuildCategory) {
+      return false
+    }
 
-      return channel.name.toLowerCase() === categoryName.toLowerCase()
-    },
-  )
+    return channel.name.toLowerCase() === categoryName.toLowerCase()
+  })
 
   if (existingCategory) {
     return existingCategory
@@ -99,15 +94,15 @@ export async function createProjectChannels({
 
   getDatabase()
     .prepare(
-      'INSERT OR REPLACE INTO channel_directories (channel_id, directory, channel_type) VALUES (?, ?, ?)',
+      'INSERT OR REPLACE INTO channel_directories (channel_id, directory, channel_type, app_id) VALUES (?, ?, ?, ?)',
     )
-    .run(textChannel.id, projectDirectory, 'text')
+    .run(textChannel.id, projectDirectory, 'text', appId)
 
   getDatabase()
     .prepare(
-      'INSERT OR REPLACE INTO channel_directories (channel_id, directory, channel_type) VALUES (?, ?, ?)',
+      'INSERT OR REPLACE INTO channel_directories (channel_id, directory, channel_type, app_id) VALUES (?, ?, ?, ?)',
     )
-    .run(voiceChannel.id, projectDirectory, 'voice')
+    .run(voiceChannel.id, projectDirectory, 'voice', appId)
 
   return {
     textChannelId: textChannel.id,
@@ -124,9 +119,7 @@ export type ChannelWithTags = {
   kimakiApp?: string
 }
 
-export async function getChannelsWithDescriptions(
-  guild: Guild,
-): Promise<ChannelWithTags[]> {
+export async function getChannelsWithDescriptions(guild: Guild): Promise<ChannelWithTags[]> {
   const channels: ChannelWithTags[] = []
 
   guild.channels.cache

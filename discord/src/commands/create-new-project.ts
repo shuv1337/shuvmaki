@@ -2,9 +2,9 @@
 
 import { ChannelType, type TextChannel } from 'discord.js'
 import fs from 'node:fs'
-import os from 'node:os'
 import path from 'node:path'
 import type { CommandContext } from './types.js'
+import { getProjectsDir } from '../config.js'
 import { createProjectChannels } from '../channel-management.js'
 import { handleOpencodeSession } from '../session-handler.js'
 import { SILENT_MESSAGE_FLAGS } from '../discord-utils.js'
@@ -44,19 +44,17 @@ export async function handleCreateNewProjectCommand({
     return
   }
 
-  const kimakiDir = path.join(os.homedir(), 'kimaki')
-  const projectDirectory = path.join(kimakiDir, sanitizedName)
+  const projectsDir = getProjectsDir()
+  const projectDirectory = path.join(projectsDir, sanitizedName)
 
   try {
-    if (!fs.existsSync(kimakiDir)) {
-      fs.mkdirSync(kimakiDir, { recursive: true })
-      logger.log(`Created kimaki directory: ${kimakiDir}`)
+    if (!fs.existsSync(projectsDir)) {
+      fs.mkdirSync(projectsDir, { recursive: true })
+      logger.log(`Created projects directory: ${projectsDir}`)
     }
 
     if (fs.existsSync(projectDirectory)) {
-      await command.editReply(
-        `Project directory already exists: ${projectDirectory}`,
-      )
+      await command.editReply(`Project directory already exists: ${projectDirectory}`)
       return
     }
 
@@ -67,16 +65,13 @@ export async function handleCreateNewProjectCommand({
     execSync('git init', { cwd: projectDirectory, stdio: 'pipe' })
     logger.log(`Initialized git in: ${projectDirectory}`)
 
-    const { textChannelId, voiceChannelId, channelName } =
-      await createProjectChannels({
-        guild,
-        projectDirectory,
-        appId,
-      })
+    const { textChannelId, voiceChannelId, channelName } = await createProjectChannels({
+      guild,
+      projectDirectory,
+      appId,
+    })
 
-    const textChannel = (await guild.channels.fetch(
-      textChannelId,
-    )) as TextChannel
+    const textChannel = (await guild.channels.fetch(textChannelId)) as TextChannel
 
     await command.editReply(
       `✅ Created new project **${sanitizedName}**\n📁 Directory: \`${projectDirectory}\`\n📝 Text: <#${textChannelId}>\n🔊 Voice: <#${voiceChannelId}>\n\n_Starting session..._`,
@@ -94,8 +89,7 @@ export async function handleCreateNewProjectCommand({
     })
 
     await handleOpencodeSession({
-      prompt:
-        'The project was just initialized. Say hi and ask what the user wants to build.',
+      prompt: 'The project was just initialized. Say hi and ask what the user wants to build.',
       thread,
       projectDirectory,
       channelId: textChannel.id,

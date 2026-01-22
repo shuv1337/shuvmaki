@@ -1,4 +1,5 @@
 // /agent command - Set the preferred agent for this channel or session.
+// Also provides quick agent commands like /plan-agent, /build-agent that switch instantly.
 
 import {
   ChatInputCommandInteraction,
@@ -10,63 +11,58 @@ import {
   type TextChannel,
 } from 'discord.js'
 import crypto from 'node:crypto'
-import {
-  getDatabase,
-  setChannelAgent,
-  setSessionAgent,
-  runModelMigrations,
-} from '../database.js'
+import { getDatabase, setChannelAgent, setSessionAgent, clearSessionModel, runModelMigrations } from '../database.js'
 import { initializeOpencodeForDirectory } from '../opencode.js'
 import { resolveTextChannel, getKimakiMetadata } from '../discord-utils.js'
 import { createLogger } from '../logger.js'
+import * as errore from 'errore'
 
 const agentLogger = createLogger('AGENT')
 
-// TTL for pending agent selection contexts (5 minutes)
-const PENDING_CONTEXT_TTL_MS = 5 * 60 * 1000
+const pendingAgentContexts = new Map<
+  string,
+  {
+    dir: string
+    channelId: string
+    sessionId?: string
+    isThread: boolean
+  }
+>()
 
-type AgentContext = {
+/**
+ * Context for agent commands, containing channel/session info.
+ */
+export type AgentCommandContext = {
   dir: string
   channelId: string
   sessionId?: string
   isThread: boolean
-  createdAt: number
 }
-
-const pendingAgentContexts = new Map<string, AgentContext>()
 
 /**
- * Clean up expired pending contexts.
- * Called before adding new contexts to prevent unbounded memory growth.
+ * Sanitize an agent name to be a valid Discord command name component.
+ * Lowercase, alphanumeric and hyphens only.
  */
-function cleanupExpiredContexts(): void {
-  const now = Date.now()
-  for (const [hash, context] of pendingAgentContexts) {
-    if (now - context.createdAt > PENDING_CONTEXT_TTL_MS) {
-      pendingAgentContexts.delete(hash)
-      agentLogger.log(`[AGENT] Cleaned up expired context: ${hash}`)
-    }
-  }
+export function sanitizeAgentName(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '')
 }
 
-export async function handleAgentCommand({
+/**
+ * Resolve the context for an agent command (directory, channel, session).
+ * Returns null if the command cannot be executed in this context.
+ */
+export async function resolveAgentCommandContext({
   interaction,
   appId,
 }: {
   interaction: ChatInputCommandInteraction
   appId: string
-}): Promise<void> {
-  await interaction.deferReply({ ephemeral: true })
-
-  runModelMigrations()
-
+}): Promise<AgentCommandContext | null> {
   const channel = interaction.channel
 
   if (!channel) {
-    await interaction.editReply({
-      content: 'This command can only be used in a channel',
-    })
-    return
+    await interaction.editReply({ content: 'This command can only be used in a channel' })
+    return null
   }
 
   const isThread = [
@@ -102,28 +98,77 @@ export async function handleAgentCommand({
     await interaction.editReply({
       content: 'This command can only be used in text channels or threads',
     })
-    return
+    return null
   }
 
   if (channelAppId && channelAppId !== appId) {
-    await interaction.editReply({
-      content: 'This channel is not configured for this bot',
-    })
-    return
+    await interaction.editReply({ content: 'This channel is not configured for this bot' })
+    return null
   }
 
   if (!projectDirectory) {
     await interaction.editReply({
       content: 'This channel is not configured with a project directory',
     })
+    return null
+  }
+
+  return {
+    dir: projectDirectory,
+    channelId: targetChannelId,
+    sessionId,
+    isThread,
+  }
+}
+
+/**
+ * Set the agent preference for a context (session or channel).
+ * When switching agents for a session, also clears the session model preference
+ * so the new agent's model takes effect.
+ */
+export function setAgentForContext({
+  context,
+  agentName,
+}: {
+  context: AgentCommandContext
+  agentName: string
+}): void {
+  if (context.isThread && context.sessionId) {
+    setSessionAgent(context.sessionId, agentName)
+    // Clear session model so the new agent's model takes effect
+    clearSessionModel(context.sessionId)
+    agentLogger.log(`Set agent ${agentName} for session ${context.sessionId} (cleared model preference)`)
+  } else {
+    setChannelAgent(context.channelId, agentName)
+    agentLogger.log(`Set agent ${agentName} for channel ${context.channelId}`)
+  }
+}
+
+export async function handleAgentCommand({
+  interaction,
+  appId,
+}: {
+  interaction: ChatInputCommandInteraction
+  appId: string
+}): Promise<void> {
+  await interaction.deferReply({ ephemeral: true })
+
+  runModelMigrations()
+
+  const context = await resolveAgentCommandContext({ interaction, appId })
+  if (!context) {
     return
   }
 
   try {
-    const getClient = await initializeOpencodeForDirectory(projectDirectory)
+    const getClient = await initializeOpencodeForDirectory(context.dir)
+    if (errore.isError(getClient)) {
+      await interaction.editReply({ content: getClient.message })
+      return
+    }
 
     const agentsResponse = await getClient().app.agents({
-      query: { directory: projectDirectory },
+      query: { directory: context.dir },
     })
 
     if (!agentsResponse.data || agentsResponse.data.length === 0) {
@@ -132,7 +177,10 @@ export async function handleAgentCommand({
     }
 
     const agents = agentsResponse.data
-      .filter((a) => a.mode === 'primary' || a.mode === 'all')
+      .filter((agent) => {
+        const hidden = (agent as { hidden?: boolean }).hidden
+        return (agent.mode === 'primary' || agent.mode === 'all') && !hidden
+      })
       .slice(0, 25)
 
     if (agents.length === 0) {
@@ -140,17 +188,7 @@ export async function handleAgentCommand({
       return
     }
 
-    // Clean up expired contexts before adding new one
-    cleanupExpiredContexts()
-
     const contextHash = crypto.randomBytes(8).toString('hex')
-    const context: AgentContext = {
-      dir: projectDirectory,
-      channelId: targetChannelId,
-      sessionId,
-      isThread,
-      createdAt: Date.now(),
-    }
     pendingAgentContexts.set(contextHash, context)
 
     const options = agents.map((agent) => ({
@@ -164,8 +202,7 @@ export async function handleAgentCommand({
       .setPlaceholder('Select an agent')
       .addOptions(options)
 
-    const actionRow =
-      new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(selectMenu)
+    const actionRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(selectMenu)
 
     await interaction.editReply({
       content: '**Set Agent Preference**\nSelect an agent:',
@@ -193,11 +230,7 @@ export async function handleAgentSelectMenu(
   const contextHash = customId.replace('agent_select:', '')
   const context = pendingAgentContexts.get(contextHash)
 
-  // Check if context exists and is not expired
-  if (!context || Date.now() - context.createdAt > PENDING_CONTEXT_TTL_MS) {
-    if (context) {
-      pendingAgentContexts.delete(contextHash)
-    }
+  if (!context) {
     await interaction.editReply({
       content: 'Selection expired. Please run /agent again.',
       components: [],
@@ -215,22 +248,14 @@ export async function handleAgentSelectMenu(
   }
 
   try {
-    if (context.isThread && context.sessionId) {
-      setSessionAgent(context.sessionId, selectedAgent)
-      agentLogger.log(
-        `Set agent ${selectedAgent} for session ${context.sessionId}`,
-      )
+    setAgentForContext({ context, agentName: selectedAgent })
 
+    if (context.isThread && context.sessionId) {
       await interaction.editReply({
         content: `Agent preference set for this session: **${selectedAgent}**`,
         components: [],
       })
     } else {
-      setChannelAgent(context.channelId, selectedAgent)
-      agentLogger.log(
-        `Set agent ${selectedAgent} for channel ${context.channelId}`,
-      )
-
       await interaction.editReply({
         content: `Agent preference set for this channel: **${selectedAgent}**\n\nAll new sessions in this channel will use this agent.`,
         components: [],
@@ -243,6 +268,76 @@ export async function handleAgentSelectMenu(
     await interaction.editReply({
       content: `Failed to save agent preference: ${error instanceof Error ? error.message : 'Unknown error'}`,
       components: [],
+    })
+  }
+}
+
+/**
+ * Handle quick agent commands like /plan-agent, /build-agent.
+ * These instantly switch to the specified agent without showing a dropdown.
+ */
+export async function handleQuickAgentCommand({
+  command,
+  appId,
+}: {
+  command: ChatInputCommandInteraction
+  appId: string
+}): Promise<void> {
+  await command.deferReply({ ephemeral: true })
+
+  runModelMigrations()
+
+  // Extract agent name from command: "plan-agent" → "plan"
+  const sanitizedAgentName = command.commandName.replace(/-agent$/, '')
+
+  const context = await resolveAgentCommandContext({ interaction: command, appId })
+  if (!context) {
+    return
+  }
+
+  try {
+    const getClient = await initializeOpencodeForDirectory(context.dir)
+    if (errore.isError(getClient)) {
+      await command.editReply({ content: getClient.message })
+      return
+    }
+
+    const agentsResponse = await getClient().app.agents({
+      query: { directory: context.dir },
+    })
+
+    if (!agentsResponse.data || agentsResponse.data.length === 0) {
+      await command.editReply({ content: 'No agents available in this project' })
+      return
+    }
+
+    // Find the agent matching the sanitized command name
+    const matchingAgent = agentsResponse.data.find(
+      (a) => sanitizeAgentName(a.name) === sanitizedAgentName
+    )
+
+    if (!matchingAgent) {
+      await command.editReply({
+        content: `Agent not found. Available agents: ${agentsResponse.data.map((a) => a.name).join(', ')}`,
+      })
+      return
+    }
+
+    setAgentForContext({ context, agentName: matchingAgent.name })
+
+    if (context.isThread && context.sessionId) {
+      await command.editReply({
+        content: `Switched to **${matchingAgent.name}** agent for this session`,
+      })
+    } else {
+      await command.editReply({
+        content: `Switched to **${matchingAgent.name}** agent for this channel\n\nAll new sessions will use this agent.`,
+      })
+    }
+  } catch (error) {
+    agentLogger.error('Error in quick agent command:', error)
+    await command.editReply({
+      content: `Failed to switch agent: ${error instanceof Error ? error.message : 'Unknown error'}`,
     })
   }
 }

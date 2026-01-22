@@ -27,6 +27,7 @@ import {
 import { resolveTextChannel, getKimakiMetadata } from '../discord-utils.js'
 import { abortAndRetrySession } from '../session-handler.js'
 import { createLogger } from '../logger.js'
+import * as errore from 'errore'
 
 const modelLogger = createLogger('MODEL')
 
@@ -214,7 +215,11 @@ export async function handleModelCommand({
   }
 
   try {
-    await initializeOpencodeForDirectory(projectDirectory)
+    const getClient = await initializeOpencodeForDirectory(projectDirectory)
+    if (errore.isError(getClient)) {
+      await interaction.editReply({ content: getClient.message })
+      return
+    }
     const clientV2 = getOpencodeClientV2(projectDirectory)
 
     if (!clientV2) {
@@ -341,7 +346,14 @@ export async function handleProviderSelectMenu(
   }
 
   try {
-    await initializeOpencodeForDirectory(context.dir)
+    const getClient = await initializeOpencodeForDirectory(context.dir)
+    if (errore.isError(getClient)) {
+      await interaction.editReply({
+        content: getClient.message,
+        components: [],
+      })
+      return
+    }
     const clientV2 = getOpencodeClientV2(context.dir)
 
     if (!clientV2) {

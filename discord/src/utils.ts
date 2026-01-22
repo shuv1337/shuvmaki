@@ -2,6 +2,7 @@
 // Includes Discord OAuth URL generation, array deduplication,
 // abort error detection, and date/time formatting helpers.
 
+import os from 'node:os'
 import { PermissionsBitField } from 'discord.js'
 
 type GenerateInstallUrlOptions = {
@@ -28,6 +29,7 @@ export function generateBotInstallUrl({
     PermissionsBitField.Flags.AttachFiles,
     PermissionsBitField.Flags.Connect,
     PermissionsBitField.Flags.Speak,
+    PermissionsBitField.Flags.ManageRoles,
   ],
   scopes = ['bot'],
   guildId,
@@ -64,10 +66,7 @@ export function deduplicateByKey<T, K>(arr: T[], keyFn: (item: T) => K): T[] {
   })
 }
 
-export function isAbortError(
-  error: unknown,
-  signal?: AbortSignal,
-): error is Error {
+export function isAbortError(error: unknown, signal?: AbortSignal): error is Error {
   return (
     (error instanceof Error &&
       (error.name === 'AbortError' ||
@@ -115,4 +114,12 @@ const dtf = new Intl.DateTimeFormat('en-US', {
 
 export function formatDateTime(date: Date): string {
   return dtf.format(date)
+}
+
+export function abbreviatePath(fullPath: string): string {
+  const home = os.homedir()
+  if (fullPath.startsWith(home)) {
+    return '~' + fullPath.slice(home.length)
+  }
+  return fullPath
 }

@@ -14,6 +14,7 @@ import { initializeOpencodeForDirectory } from '../opencode.js'
 import { resolveTextChannel, getKimakiMetadata, sendThreadMessage } from '../discord-utils.js'
 import { collectLastAssistantParts } from '../message-formatting.js'
 import { createLogger } from '../logger.js'
+import * as errore from 'errore'
 
 const sessionLogger = createLogger('SESSION')
 const forkLogger = createLogger('FORK')
@@ -71,9 +72,15 @@ export async function handleForkCommand(interaction: ChatInputCommandInteraction
 
   const sessionId = row.session_id
 
-  try {
-    const getClient = await initializeOpencodeForDirectory(directory)
+  const getClient = await initializeOpencodeForDirectory(directory)
+  if (errore.isError(getClient)) {
+    await interaction.editReply({
+      content: `Failed to load messages: ${getClient.message}`,
+    })
+    return
+  }
 
+  try {
     const messagesResponse = await getClient().session.messages({
       path: { id: sessionId },
     })
@@ -85,9 +92,7 @@ export async function handleForkCommand(interaction: ChatInputCommandInteraction
       return
     }
 
-    const userMessages = messagesResponse.data.filter(
-      (m) => m.info.role === 'user'
-    )
+    const userMessages = messagesResponse.data.filter((m: { info: { role: string } }) => m.info.role === 'user')
 
     if (userMessages.length === 0) {
       await interaction.editReply({
@@ -98,8 +103,10 @@ export async function handleForkCommand(interaction: ChatInputCommandInteraction
 
     const recentMessages = userMessages.slice(-25)
 
-    const options = recentMessages.map((m, index) => {
-      const textPart = m.parts.find((p) => p.type === 'text') as { type: 'text'; text: string } | undefined
+    const options = recentMessages.map((m: { parts: Array<{ type: string; text?: string }>; info: { id: string; time: { created: number } } }, index: number) => {
+      const textPart = m.parts.find((p: { type: string }) => p.type === 'text') as
+        | { type: 'text'; text: string }
+        | undefined
       const preview = textPart?.text?.slice(0, 80) || '(no text)'
       const label = `${index + 1}. ${preview}${preview.length >= 80 ? '...' : ''}`
 
@@ -117,11 +124,11 @@ export async function handleForkCommand(interaction: ChatInputCommandInteraction
       .setPlaceholder('Select a message to fork from')
       .addOptions(options)
 
-    const actionRow = new ActionRowBuilder<StringSelectMenuBuilder>()
-      .addComponents(selectMenu)
+    const actionRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(selectMenu)
 
     await interaction.editReply({
-      content: '**Fork Session**\nSelect the user message to fork from. The forked session will continue as if you had not sent that message:',
+      content:
+        '**Fork Session**\nSelect the user message to fork from. The forked session will continue as if you had not sent that message:',
       components: [actionRow],
     })
   } catch (error) {
@@ -132,7 +139,9 @@ export async function handleForkCommand(interaction: ChatInputCommandInteraction
   }
 }
 
-export async function handleForkSelectMenu(interaction: StringSelectMenuInteraction): Promise<void> {
+export async function handleForkSelectMenu(
+  interaction: StringSelectMenuInteraction,
+): Promise<void> {
   const customId = interaction.customId
 
   if (!customId.startsWith('fork_select:')) {
@@ -161,9 +170,13 @@ export async function handleForkSelectMenu(interaction: StringSelectMenuInteract
 
   await interaction.deferReply({ ephemeral: false })
 
-  try {
-    const getClient = await initializeOpencodeForDirectory(directory)
+  const getClient = await initializeOpencodeForDirectory(directory)
+  if (errore.isError(getClient)) {
+    await interaction.editReply(`Failed to fork session: ${getClient.message}`)
+    return
+  }
 
+  try {
     const forkResponse = await getClient().session.fork({
       path: { id: sessionId },
       body: { messageID: selectedMessageId },
@@ -177,11 +190,14 @@ export async function handleForkSelectMenu(interaction: StringSelectMenuInteract
     const forkedSession = forkResponse.data
     const parentChannel = interaction.channel
 
-    if (!parentChannel || ![
-      ChannelType.PublicThread,
-      ChannelType.PrivateThread,
-      ChannelType.AnnouncementThread,
-    ].includes(parentChannel.type)) {
+    if (
+      !parentChannel ||
+      ![
+        ChannelType.PublicThread,
+        ChannelType.PrivateThread,
+        ChannelType.AnnouncementThread,
+      ].includes(parentChannel.type)
+    ) {
       await interaction.editReply('Could not access parent channel')
       return
     }
@@ -200,14 +216,10 @@ export async function handleForkSelectMenu(interaction: StringSelectMenuInteract
     })
 
     getDatabase()
-      .prepare(
-        'INSERT OR REPLACE INTO thread_sessions (thread_id, session_id) VALUES (?, ?)'
-      )
+      .prepare('INSERT OR REPLACE INTO thread_sessions (thread_id, session_id) VALUES (?, ?)')
       .run(thread.id, forkedSession.id)
 
-    sessionLogger.log(
-      `Created forked session ${forkedSession.id} in thread ${thread.id}`
-    )
+    sessionLogger.log(`Created forked session ${forkedSession.id} in thread ${thread.id}`)
 
     await sendThreadMessage(
       thread,
@@ -240,18 +252,13 @@ export async function handleForkSelectMenu(interaction: StringSelectMenuInteract
       }
     }
 
-    await sendThreadMessage(
-      thread,
-      `You can now continue the conversation from this point.`,
-    )
+    await sendThreadMessage(thread, `You can now continue the conversation from this point.`)
 
-    await interaction.editReply(
-      `Session forked! Continue in ${thread.toString()}`
-    )
+    await interaction.editReply(`Session forked! Continue in ${thread.toString()}`)
   } catch (error) {
     forkLogger.error('Error forking session:', error)
     await interaction.editReply(
-      `Failed to fork session: ${error instanceof Error ? error.message : 'Unknown error'}`
+      `Failed to fork session: ${error instanceof Error ? error.message : 'Unknown error'}`,
     )
   }
 }

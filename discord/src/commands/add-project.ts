@@ -7,13 +7,12 @@ import { getDatabase } from '../database.js'
 import { initializeOpencodeForDirectory } from '../opencode.js'
 import { createProjectChannels } from '../channel-management.js'
 import { createLogger } from '../logger.js'
+import { abbreviatePath } from '../utils.js'
+import * as errore from 'errore'
 
 const logger = createLogger('ADD-PROJECT')
 
-export async function handleAddProjectCommand({
-  command,
-  appId,
-}: CommandContext): Promise<void> {
+export async function handleAddProjectCommand({ command, appId }: CommandContext): Promise<void> {
   await command.deferReply({ ephemeral: false })
 
   const projectId = command.options.getString('project', true)
@@ -27,6 +26,10 @@ export async function handleAddProjectCommand({
   try {
     const currentDir = process.cwd()
     const getClient = await initializeOpencodeForDirectory(currentDir)
+    if (errore.isError(getClient)) {
+      await command.editReply(getClient.message)
+      return
+    }
 
     const projectsResponse = await getClient().project.list({})
     if (!projectsResponse.data) {
@@ -62,13 +65,12 @@ export async function handleAddProjectCommand({
       return
     }
 
-    const { textChannelId, voiceChannelId, channelName } =
-      await createProjectChannels({
-        guild,
-        projectDirectory: directory,
-        appId,
-        botName: command.client.user?.username,
-      })
+    const { textChannelId, voiceChannelId, channelName } = await createProjectChannels({
+      guild,
+      projectDirectory: directory,
+      appId,
+      botName: command.client.user?.username,
+    })
 
     await command.editReply(
       `✅ Created channels for project:\n📝 Text: <#${textChannelId}>\n🔊 Voice: <#${voiceChannelId}>\n📁 Directory: \`${directory}\``,
@@ -92,6 +94,10 @@ export async function handleAddProjectAutocomplete({
   try {
     const currentDir = process.cwd()
     const getClient = await initializeOpencodeForDirectory(currentDir)
+    if (errore.isError(getClient)) {
+      await interaction.respond([])
+      return
+    }
 
     const projectsResponse = await getClient().project.list({})
     if (!projectsResponse.data) {
@@ -101,15 +107,19 @@ export async function handleAddProjectAutocomplete({
 
     const db = getDatabase()
     const existingDirs = db
-      .prepare(
-        'SELECT DISTINCT directory FROM channel_directories WHERE channel_type = ?',
-      )
+      .prepare('SELECT DISTINCT directory FROM channel_directories WHERE channel_type = ?')
       .all('text') as { directory: string }[]
     const existingDirSet = new Set(existingDirs.map((row) => row.directory))
 
-    const availableProjects = projectsResponse.data.filter(
-      (project) => !existingDirSet.has(project.worktree),
-    )
+    const availableProjects = projectsResponse.data.filter((project) => {
+      if (existingDirSet.has(project.worktree)) {
+        return false
+      }
+      if (path.basename(project.worktree).startsWith('opencode-test-')) {
+        return false
+      }
+      return true
+    })
 
     const projects = availableProjects
       .filter((project) => {
@@ -124,7 +134,7 @@ export async function handleAddProjectAutocomplete({
       })
       .slice(0, 25)
       .map((project) => {
-        const name = `${path.basename(project.worktree)} (${project.worktree})`
+        const name = `${path.basename(project.worktree)} (${abbreviatePath(project.worktree)})`
         return {
           name: name.length > 100 ? name.slice(0, 99) + '…' : name,
           value: project.id,

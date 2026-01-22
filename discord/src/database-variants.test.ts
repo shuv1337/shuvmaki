@@ -1,8 +1,8 @@
-import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
-import { Database } from 'bun:sqlite'
+import { describe, test, expect, beforeEach, afterEach } from 'vitest'
+import Database from 'better-sqlite3'
 
 // Tests verify the SQL patterns used in database.ts variant helpers.
-// Uses bun:sqlite (compatible API with better-sqlite3) for in-memory testing.
+// Uses better-sqlite3 for in-memory testing.
 // This validates schema creation and CRUD operations without touching real database.
 
 let testDb: Database
@@ -13,7 +13,7 @@ describe('variant preference helpers', () => {
     testDb = new Database(':memory:')
 
     // Run the same migration SQL as runModelMigrations() in database.ts
-    testDb.run(`
+    testDb.exec(`
       CREATE TABLE IF NOT EXISTS channel_variants (
         channel_id TEXT PRIMARY KEY,
         variant_name TEXT NOT NULL,
@@ -22,7 +22,7 @@ describe('variant preference helpers', () => {
       )
     `)
 
-    testDb.run(`
+    testDb.exec(`
       CREATE TABLE IF NOT EXISTS session_variants (
         session_id TEXT PRIMARY KEY,
         variant_name TEXT NOT NULL,
@@ -38,11 +38,9 @@ describe('variant preference helpers', () => {
   describe('channel variants', () => {
     test('getChannelVariant returns undefined for non-existent channel', () => {
       const result = testDb
-        .prepare(
-          'SELECT variant_name FROM channel_variants WHERE channel_id = ?',
-        )
-        .get('non-existent') as { variant_name: string } | null
-      expect(result).toBeNull()
+        .prepare('SELECT variant_name FROM channel_variants WHERE channel_id = ?')
+        .get('non-existent') as { variant_name: string } | undefined
+      expect(result).toBeUndefined()
     })
 
     test('set and get channel variant roundtrip', () => {
@@ -115,12 +113,10 @@ describe('variant preference helpers', () => {
         .run(channelId)
 
       const result = testDb
-        .prepare(
-          'SELECT variant_name FROM channel_variants WHERE channel_id = ?',
-        )
-        .get(channelId) as { variant_name: string } | null
+        .prepare('SELECT variant_name FROM channel_variants WHERE channel_id = ?')
+        .get(channelId) as { variant_name: string } | undefined
 
-      expect(result).toBeNull()
+      expect(result).toBeUndefined()
     })
 
     test('clearChannelVariant is idempotent for non-existent channel', () => {
@@ -137,11 +133,9 @@ describe('variant preference helpers', () => {
   describe('session variants', () => {
     test('getSessionVariant returns undefined for non-existent session', () => {
       const result = testDb
-        .prepare(
-          'SELECT variant_name FROM session_variants WHERE session_id = ?',
-        )
-        .get('non-existent') as { variant_name: string } | null
-      expect(result).toBeNull()
+        .prepare('SELECT variant_name FROM session_variants WHERE session_id = ?')
+        .get('non-existent') as { variant_name: string } | undefined
+      expect(result).toBeUndefined()
     })
 
     test('set and get session variant roundtrip', () => {
@@ -207,12 +201,10 @@ describe('variant preference helpers', () => {
         .run(sessionId)
 
       const result = testDb
-        .prepare(
-          'SELECT variant_name FROM session_variants WHERE session_id = ?',
-        )
-        .get(sessionId) as { variant_name: string } | null
+        .prepare('SELECT variant_name FROM session_variants WHERE session_id = ?')
+        .get(sessionId) as { variant_name: string } | undefined
 
-      expect(result).toBeNull()
+      expect(result).toBeUndefined()
     })
 
     test('clearSessionVariant is idempotent for non-existent session', () => {
@@ -271,7 +263,7 @@ describe('variant preference helpers', () => {
     test('migrations are idempotent (CREATE IF NOT EXISTS)', () => {
       // Run create statements multiple times - should not throw
       expect(() => {
-        testDb.run(`
+        testDb.exec(`
           CREATE TABLE IF NOT EXISTS channel_variants (
             channel_id TEXT PRIMARY KEY,
             variant_name TEXT NOT NULL,
@@ -279,7 +271,7 @@ describe('variant preference helpers', () => {
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
           )
         `)
-        testDb.run(`
+        testDb.exec(`
           CREATE TABLE IF NOT EXISTS session_variants (
             session_id TEXT PRIMARY KEY,
             variant_name TEXT NOT NULL,

@@ -2,8 +2,6 @@ import { test, expect } from 'vitest'
 import { Lexer } from 'marked'
 import { escapeBackticksInCodeBlocks, splitMarkdownForDiscord } from './discord-utils.js'
 
-
-
 test('escapes single backticks in code blocks', () => {
   const input = '```js\nconst x = `hello`\n```'
   const result = escapeBackticksInCodeBlocks(input)
@@ -376,11 +374,19 @@ test('splitMarkdownForDiscord handles very long line inside code block', () => {
     \`\`\`
     ",
       "\`\`\`js
-    veryverylonglinethatexceedsmaxlength
-    \`\`\`
+    veryverylo\`\`\`
     ",
       "\`\`\`js
-    short
+    nglinethat\`\`\`
+    ",
+      "\`\`\`js
+    exceedsmax\`\`\`
+    ",
+      "\`\`\`js
+    length
+    \`\`\`
+    ",
+      "short
     \`\`\`
     ",
     ]

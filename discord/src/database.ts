@@ -1,12 +1,13 @@
 // SQLite database manager for persistent bot state.
 // Stores thread-session mappings, bot tokens, channel directories,
-// API keys, and model preferences in ~/.kimaki/discord-sessions.db.
+// API keys, and model preferences in <dataDir>/discord-sessions.db.
 
 import Database from 'better-sqlite3'
 import fs from 'node:fs'
-import os from 'node:os'
 import path from 'node:path'
+import * as errore from 'errore'
 import { createLogger } from './logger.js'
+import { getDataDir } from './config.js'
 
 const dbLogger = createLogger('DB')
 
@@ -14,15 +15,19 @@ let db: Database.Database | null = null
 
 export function getDatabase(): Database.Database {
   if (!db) {
-    const kimakiDir = path.join(os.homedir(), '.kimaki')
+    const dataDir = getDataDir()
 
-    try {
-      fs.mkdirSync(kimakiDir, { recursive: true })
-    } catch (error) {
-      dbLogger.error('Failed to create ~/.kimaki directory:', error)
+    const mkdirError = errore.tryFn({
+      try: () => {
+        fs.mkdirSync(dataDir, { recursive: true })
+      },
+      catch: (e) => e as Error,
+    })
+    if (errore.isError(mkdirError)) {
+      dbLogger.error(`Failed to create data directory ${dataDir}:`, mkdirError.message)
     }
 
-    const dbPath = path.join(kimakiDir, 'discord-sessions.db')
+    const dbPath = path.join(dataDir, 'discord-sessions.db')
 
     dbLogger.log(`Opening database at: ${dbPath}`)
     db = new Database(dbPath)
@@ -57,6 +62,21 @@ export function getDatabase(): Database.Database {
         channel_id TEXT PRIMARY KEY,
         directory TEXT NOT NULL,
         channel_type TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+
+    // Migration: add app_id column to channel_directories for multi-bot support
+    try {
+      db.exec(`ALTER TABLE channel_directories ADD COLUMN app_id TEXT`)
+    } catch {
+      // Column already exists, ignore
+    }
+
+    // Table for threads that should auto-start a session (created by CLI without --notify-only)
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS pending_auto_start (
+        thread_id TEXT PRIMARY KEY,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
     `)
@@ -181,9 +201,19 @@ export function getSessionModel(sessionId: string): string | undefined {
  */
 export function setSessionModel(sessionId: string, modelId: string): void {
   const db = getDatabase()
-  db.prepare(
-    `INSERT OR REPLACE INTO session_models (session_id, model_id) VALUES (?, ?)`,
-  ).run(sessionId, modelId)
+  db.prepare(`INSERT OR REPLACE INTO session_models (session_id, model_id) VALUES (?, ?)`).run(
+    sessionId,
+    modelId,
+  )
+}
+
+/**
+ * Clear the model preference for a session.
+ * Used when switching agents so the agent's model takes effect.
+ */
+export function clearSessionModel(sessionId: string): void {
+  const db = getDatabase()
+  db.prepare('DELETE FROM session_models WHERE session_id = ?').run(sessionId)
 }
 
 /**
@@ -225,9 +255,10 @@ export function getSessionAgent(sessionId: string): string | undefined {
  */
 export function setSessionAgent(sessionId: string, agentName: string): void {
   const db = getDatabase()
-  db.prepare(
-    `INSERT OR REPLACE INTO session_agents (session_id, agent_name) VALUES (?, ?)`,
-  ).run(sessionId, agentName)
+  db.prepare(`INSERT OR REPLACE INTO session_agents (session_id, agent_name) VALUES (?, ?)`).run(
+    sessionId,
+    agentName,
+  )
 }
 
 /**

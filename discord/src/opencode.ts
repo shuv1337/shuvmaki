@@ -1,34 +1,51 @@
 // OpenCode server process manager.
 // Spawns and maintains OpenCode API servers per project directory,
 // handles automatic restarts on failure, and provides typed SDK clients.
+// Uses errore for type-safe error handling.
 
 import { spawn, type ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
 import net from 'node:net'
-import {
-  createOpencodeClient,
-  type OpencodeClient,
-  type Config,
-} from '@opencode-ai/sdk'
+import { createOpencodeClient, type OpencodeClient, type Config } from '@opencode-ai/sdk'
 import {
   createOpencodeClient as createOpencodeClientV2,
   type OpencodeClient as OpencodeClientV2,
 } from '@opencode-ai/sdk/v2'
+import * as errore from 'errore'
 import { createLogger } from './logger.js'
+import {
+  DirectoryNotAccessibleError,
+  ServerStartError,
+  ServerNotReadyError,
+  FetchError,
+  type OpenCodeErrors,
+} from './errors.js'
 
 const opencodeLogger = createLogger('OPENCODE')
 
-const opencodeServers = new Map<
-  string,
-  {
-    process: ChildProcess
-    client: OpencodeClient
-    clientV2: OpencodeClientV2
-    port: number
-  }
->()
+type ServerEntry = {
+  process: ChildProcess | null
+  client: OpencodeClient
+  clientV2: OpencodeClientV2
+  port: number
+  isExternal: boolean
+}
+
+const opencodeServers = new Map<string, ServerEntry>()
 
 const serverRetryCount = new Map<string, number>()
+
+const createFetchWithTimeout = ({ directory }: { directory: string }) => {
+  return (request: Request) => {
+    const headers = new Headers(request.headers)
+    headers.set('x-opencode-directory', directory)
+    const requestWithDirectory = new Request(request, { headers })
+    return fetch(requestWithDirectory, {
+      // @ts-ignore
+      timeout: false,
+    })
+  }
+}
 
 async function getOpenPort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -48,78 +65,137 @@ async function getOpenPort(): Promise<number> {
   })
 }
 
-async function waitForServer(port: number, maxAttempts = 30): Promise<boolean> {
-  for (let i = 0; i < maxAttempts; i++) {
-    try {
-      const endpoints = [
-        `http://127.0.0.1:${port}/api/health`,
-        `http://127.0.0.1:${port}/`,
-        `http://127.0.0.1:${port}/api`,
-      ]
+async function waitForServer({
+  baseUrl,
+  maxAttempts = 30,
+}: {
+  baseUrl: string
+  maxAttempts?: number
+}): Promise<ServerStartError | true> {
+  const url = new URL(baseUrl)
+  const port = parseInt(url.port, 10) || (url.protocol === 'https:' ? 443 : 80)
+  const base = `${url.protocol}//${url.host}`
 
-      for (const endpoint of endpoints) {
-        try {
-          const response = await fetch(endpoint)
-          if (response.status < 500) {
-            return true
-          }
-          const body = await response.text()
-          // Fatal errors that won't resolve with retrying
-          if (body.includes('BunInstallFailedError')) {
-            throw new Error(`Server failed to start: ${body.slice(0, 200)}`)
-          }
-        } catch (e) {
-          // Re-throw fatal errors
-          if ((e as Error).message?.includes('Server failed to start')) {
-            throw e
-          }
-        }
+  for (let i = 0; i < maxAttempts; i++) {
+    const endpoints = [`${base}/api/health`, `${base}/`, `${base}/api`]
+
+    for (const endpoint of endpoints) {
+      const response = await errore.tryAsync({
+        try: () => fetch(endpoint),
+        catch: (e) => new FetchError({ url: endpoint, cause: e }),
+      })
+      if (errore.isError(response)) {
+        // Connection refused or other transient errors - continue polling
+        opencodeLogger.debug(`Server polling attempt failed: ${response.message}`)
+        continue
       }
-    } catch (e) {
-      // Re-throw fatal errors that won't resolve with retrying
-      if ((e as Error).message?.includes('Server failed to start')) {
-        throw e
+      if (response.status < 500) {
+        return true
       }
-      opencodeLogger.debug(
-        `Server polling attempt failed: ${(e as Error).message}`,
-      )
+      const body = await response.text()
+      // Fatal errors that won't resolve with retrying
+      if (body.includes('BunInstallFailedError')) {
+        return new ServerStartError({ port, reason: body.slice(0, 200) })
+      }
     }
     await new Promise((resolve) => setTimeout(resolve, 1000))
   }
-  throw new Error(
-    `Server did not start on port ${port} after ${maxAttempts} seconds`,
-  )
+  return new ServerStartError({ port, reason: `Server did not start after ${maxAttempts} seconds` })
 }
 
-export async function initializeOpencodeForDirectory(directory: string) {
+/**
+ * Connect to an existing shuvcode server instead of spawning a new one.
+ * Use this when you have a server already running (e.g., from `shuvcode serve`).
+ */
+export async function connectToExistingServer({
+  directory,
+  serverUrl,
+}: {
+  directory: string
+  serverUrl: string
+}): Promise<OpenCodeErrors | (() => OpencodeClient)> {
+  const url = new URL(serverUrl)
+  const port = parseInt(url.port, 10) || (url.protocol === 'https:' ? 443 : 80)
+
+  opencodeLogger.log(
+    `Connecting to existing server at ${serverUrl} for directory: ${directory}`,
+  )
+
+  const waitResult = await waitForServer({ baseUrl: serverUrl })
+  if (errore.isError(waitResult)) {
+    return waitResult
+  }
+
+  opencodeLogger.log(`External server ready on port ${port}`)
+
+  const fetchWithTimeout = createFetchWithTimeout({ directory })
+
+  const client = createOpencodeClient({
+    baseUrl: serverUrl,
+    fetch: fetchWithTimeout,
+  })
+
+  const clientV2 = createOpencodeClientV2({
+    baseUrl: serverUrl,
+    fetch: fetchWithTimeout as typeof fetch,
+  })
+
+  opencodeServers.set(directory, {
+    process: null,
+    client,
+    clientV2,
+    port,
+    isExternal: true,
+  })
+
+  return () => {
+    const entry = opencodeServers.get(directory)
+    if (!entry?.client) {
+      throw new ServerNotReadyError({ directory })
+    }
+    return entry.client
+  }
+}
+
+export async function initializeOpencodeForDirectory(
+  directory: string,
+): Promise<OpenCodeErrors | (() => OpencodeClient)> {
   const existing = opencodeServers.get(directory)
-  if (existing && !existing.process.killed) {
+  const isAlive = existing
+    ? existing.isExternal || (existing.process && !existing.process.killed)
+    : false
+
+  if (existing && isAlive) {
     opencodeLogger.log(
-      `Reusing existing server on port ${existing.port} for directory: ${directory}`,
+      `Reusing existing ${existing.isExternal ? 'external' : 'spawned'} server on port ${existing.port} for directory: ${directory}`,
     )
     return () => {
       const entry = opencodeServers.get(directory)
       if (!entry?.client) {
-        throw new Error(
-          `OpenCode server for directory "${directory}" is in an error state (no client available)`,
-        )
+        throw new ServerNotReadyError({ directory })
       }
       return entry.client
     }
   }
 
+  const externalServerUrl = process.env.SHUVCODE_SERVER_URL
+  if (externalServerUrl) {
+    return connectToExistingServer({ directory, serverUrl: externalServerUrl })
+  }
+
   // Verify directory exists and is accessible before spawning
-  try {
-    fs.accessSync(directory, fs.constants.R_OK | fs.constants.X_OK)
-  } catch {
-    throw new Error(
-      `Directory does not exist or is not accessible: ${directory}`,
-    )
+  const accessCheck = errore.tryFn({
+    try: () => {
+      fs.accessSync(directory, fs.constants.R_OK | fs.constants.X_OK)
+    },
+    catch: () => new DirectoryNotAccessibleError({ directory }),
+  })
+  if (errore.isError(accessCheck)) {
+    return accessCheck
   }
 
   const port = await getOpenPort()
 
-  // Look for shuvcode first (preferred fork), then opencode
   const opencodeCommand = (() => {
     if (process.env.OPENCODE_PATH) {
       return process.env.OPENCODE_PATH
@@ -145,29 +221,25 @@ export async function initializeOpencodeForDirectory(directory: string) {
     return 'shuvcode'
   })()
 
-  const serverProcess = spawn(
-    opencodeCommand,
-    ['serve', '--port', port.toString()],
-    {
-      stdio: 'pipe',
-      detached: false,
-      cwd: directory,
-      env: {
-        ...process.env,
-        OPENCODE_CONFIG_CONTENT: JSON.stringify({
-          $schema: 'https://opencode.ai/config.json',
-          lsp: false,
-          formatter: false,
-          permission: {
-            edit: 'allow',
-            bash: 'allow',
-            webfetch: 'allow',
-          },
-        } satisfies Config),
-        OPENCODE_PORT: port.toString(),
-      },
+  const serverProcess = spawn(opencodeCommand, ['serve', '--port', port.toString()], {
+    stdio: 'pipe',
+    detached: false,
+    cwd: directory,
+    env: {
+      ...process.env,
+      OPENCODE_CONFIG_CONTENT: JSON.stringify({
+        $schema: 'https://opencode.ai/config.json',
+        lsp: false,
+        formatter: false,
+        permission: {
+          edit: 'allow',
+          bash: 'allow',
+          webfetch: 'allow',
+        },
+      } satisfies Config),
+      OPENCODE_PORT: port.toString(),
     },
-  )
+  })
 
   // Buffer logs until we know if server started successfully
   const logBuffer: string[] = []
@@ -188,10 +260,7 @@ export async function initializeOpencodeForDirectory(directory: string) {
   })
 
   serverProcess.on('exit', (code) => {
-    opencodeLogger.log(
-      `Opencode server on ${directory} exited with code:`,
-      code,
-    )
+    opencodeLogger.log(`Opencode server on ${directory} exited with code:`, code)
     opencodeServers.delete(directory)
     if (code !== 0) {
       const retryCount = serverRetryCount.get(directory) || 0
@@ -200,37 +269,32 @@ export async function initializeOpencodeForDirectory(directory: string) {
         opencodeLogger.log(
           `Restarting server for directory: ${directory} (attempt ${retryCount + 1}/5)`,
         )
-        initializeOpencodeForDirectory(directory).catch((e) => {
-          opencodeLogger.error(`Failed to restart opencode server:`, e)
+        initializeOpencodeForDirectory(directory).then((result) => {
+          if (errore.isError(result)) {
+            opencodeLogger.error(`Failed to restart opencode server:`, result)
+          }
         })
       } else {
-        opencodeLogger.error(
-          `Server for ${directory} crashed too many times (5), not restarting`,
-        )
+        opencodeLogger.error(`Server for ${directory} crashed too many times (5), not restarting`)
       }
     } else {
       serverRetryCount.delete(directory)
     }
   })
 
-  try {
-    await waitForServer(port)
-    opencodeLogger.log(`Server ready on port ${port}`)
-  } catch (e) {
+  const baseUrl = `http://127.0.0.1:${port}`
+  const waitResult = await waitForServer({ baseUrl })
+  if (errore.isError(waitResult)) {
     // Dump buffered logs on failure
     opencodeLogger.error(`Server failed to start for ${directory}:`)
     for (const line of logBuffer) {
       opencodeLogger.error(`  ${line}`)
     }
-    throw e
+    return waitResult
   }
+  opencodeLogger.log(`Server ready on port ${port}`)
 
-  const baseUrl = `http://127.0.0.1:${port}`
-  const fetchWithTimeout = (request: Request) =>
-    fetch(request, {
-      // @ts-ignore
-      timeout: false,
-    })
+  const fetchWithTimeout = createFetchWithTimeout({ directory })
 
   const client = createOpencodeClient({
     baseUrl,
@@ -247,14 +311,13 @@ export async function initializeOpencodeForDirectory(directory: string) {
     client,
     clientV2,
     port,
+    isExternal: false,
   })
 
   return () => {
     const entry = opencodeServers.get(directory)
     if (!entry?.client) {
-      throw new Error(
-        `OpenCode server for directory "${directory}" is in an error state (no client available)`,
-      )
+      throw new ServerNotReadyError({ directory })
     }
     return entry.client
   }
@@ -269,9 +332,7 @@ export function getOpencodeServerPort(directory: string): number | null {
   return entry?.port ?? null
 }
 
-export function getOpencodeClientV2(
-  directory: string,
-): OpencodeClientV2 | null {
+export function getOpencodeClientV2(directory: string): OpencodeClientV2 | null {
   const entry = opencodeServers.get(directory)
   return entry?.clientV2 ?? null
 }

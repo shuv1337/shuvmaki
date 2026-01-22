@@ -13,17 +13,14 @@ import {
   type Provider,
 } from '@opencode-ai/sdk'
 import { createLogger } from './logger.js'
+import * as errore from 'errore'
 
 const toolsLogger = createLogger('TOOLS')
 
 import { ShareMarkdown } from './markdown.js'
 import { formatDistanceToNow } from './utils.js'
 import pc from 'picocolors'
-import {
-  initializeOpencodeForDirectory,
-  getOpencodeSystemMessage,
-} from './discord-bot.js'
-import { getOpencodeClientV2 } from './opencode.js'
+import { initializeOpencodeForDirectory, getOpencodeSystemMessage } from './discord-bot.js'
 
 export async function getTools({
   onMessageCompleted,
@@ -39,16 +36,12 @@ export async function getTools({
   }) => void
 }) {
   const getClient = await initializeOpencodeForDirectory(directory)
-  const client = getClient()
-  const clientV2 = getOpencodeClientV2(directory)
-
-  if (!clientV2) {
-    throw new Error(
-      `OpenCode v2 client not available for directory: ${directory}`,
-    )
+  if (errore.isError(getClient)) {
+    throw new Error(getClient.message)
   }
+  const client = getClient()
 
-  const markdownRenderer = new ShareMarkdown(clientV2, directory)
+  const markdownRenderer = new ShareMarkdown(client)
 
   const providersResponse = await client.config.providers({})
   const providers: Provider[] = providersResponse.data?.providers || []
@@ -94,7 +87,7 @@ export async function getTools({
             },
           })
           .then(async (response) => {
-            const markdown = await markdownRenderer.generate({
+            const markdownResult = await markdownRenderer.generate({
               sessionID: sessionId,
               lastAssistantOnly: true,
             })
@@ -102,7 +95,7 @@ export async function getTools({
               sessionId,
               messageId: '',
               data: response.data,
-              markdown,
+              markdown: errore.unwrapOr(markdownResult, ''),
             })
           })
           .catch((error) => {
@@ -124,315 +117,176 @@ export async function getTools({
       description:
         'Start a new chat session with an initial message. Does not wait for the message to complete',
       inputSchema: z.object({
-        message: z
-          .string()
-          .describe('The initial message to start the chat with'),
-        title: z.string().optional().describe('Optional title for the session'),
-        model: z
-          .object({
-            providerId: z
-              .string()
-              .describe('The provider ID (e.g., "anthropic", "openai")'),
-            modelId: z
-              .string()
-              .describe(
-                'The model ID (e.g., "claude-opus-4-20250514", "gpt-5")',
-              ),
-          })
-          .optional()
-          .describe('Optional model to use for this session'),
+        message: z.string().describe('The initial message to start the chat with'),
       }),
-      execute: async ({ message, title }) => {
-        if (!message.trim()) {
-          throw new Error(`message must be a non empty string`)
+      execute: async ({ message }) => {
+        const sessionResponse = await client.session.create({ body: { title: message } })
+        const sessionId = sessionResponse.data?.id
+
+        if (!sessionId) {
+          throw new Error('Failed to create session')
         }
 
-        try {
-          const session = await getClient().session.create({
+        // do not await
+        getClient()
+          .session.prompt({
+            path: { id: sessionId },
             body: {
-              title: title || message.slice(0, 50),
+              parts: [{ type: 'text', text: message }],
+              system: getOpencodeSystemMessage({ sessionId }),
             },
           })
-
-          if (!session.data) {
-            throw new Error('Failed to create session')
-          }
-
-          // do not await
-          getClient()
-            .session.prompt({
-              path: { id: session.data.id },
-              body: {
-                parts: [{ type: 'text', text: message }],
-                system: getOpencodeSystemMessage({
-                  sessionId: session.data.id,
-                }),
-              },
+          .then(async (response) => {
+            const markdownResult = await markdownRenderer.generate({
+              sessionID: sessionId,
+              lastAssistantOnly: true,
             })
-            .then(async (response) => {
-              const markdown = await markdownRenderer.generate({
-                sessionID: session.data.id,
-                lastAssistantOnly: true,
-              })
-              onMessageCompleted?.({
-                sessionId: session.data.id,
-                messageId: '',
-                data: response.data,
-                markdown,
-              })
+            onMessageCompleted?.({
+              sessionId,
+              messageId: '',
+              data: response.data,
+              markdown: errore.unwrapOr(markdownResult, ''),
             })
-            .catch((error) => {
-              onMessageCompleted?.({
-                sessionId: session.data.id,
-                messageId: '',
-                error,
-              })
+          })
+          .catch((error) => {
+            onMessageCompleted?.({
+              sessionId,
+              messageId: '',
+              error,
             })
+          })
 
-          return {
-            success: true,
-            sessionId: session.data.id,
-            title: session.data.title,
-          }
-        } catch (error) {
-          return {
-            success: false,
-            error:
-              error instanceof Error
-                ? error.message
-                : 'Failed to create chat session',
-          }
+        return {
+          success: true,
+          sessionId,
+          directive: 'Tell user that new chat session has been created',
         }
       },
     }),
 
     listChats: tool({
-      description:
-        'Get a list of available chat sessions sorted by most recent',
-      inputSchema: z.object({}),
-      execute: async () => {
-        toolsLogger.log(`Listing opencode sessions`)
-        const sessions = await getClient().session.list()
+      description: 'List all available chat sessions',
+      inputSchema: z.object({
+        limit: z.number().optional().describe('Number of sessions to return (default: 10)'),
+      }),
+      execute: async ({ limit = 10 }) => {
+        const response = await client.session.list()
+        const sessions = response.data || []
 
-        if (!sessions.data) {
-          return { success: false, error: 'No sessions found' }
-        }
-
-        const sortedSessions = [...sessions.data]
-          .sort((a, b) => {
-            return b.time.updated - a.time.updated
-          })
-          .slice(0, 20)
-
-        const sessionList = sortedSessions.map(async (session) => {
-          const finishedAt = session.time.updated
-          const status = await (async () => {
-            if (session.revert) return 'error'
-            const messagesResponse = await getClient().session.messages({
-              path: { id: session.id },
-            })
-            const messages = messagesResponse.data || []
-            const lastMessage = messages[messages.length - 1]
-            if (
-              lastMessage?.info.role === 'assistant' &&
-              !lastMessage.info.time.completed
-            ) {
-              return 'in_progress'
-            }
-            return 'finished'
-          })()
-
+        const sessionList = sessions.slice(0, limit).map((session) => {
           return {
             id: session.id,
-            folder: session.directory,
-            status,
-            finishedAt: formatDistanceToNow(new Date(finishedAt)),
-            title: session.title,
-            prompt: session.title,
+            title: session.title || 'Untitled',
+            created: formatDistanceToNow(new Date(session.time.created)),
           }
         })
 
-        const resolvedList = await Promise.all(sessionList)
-
         return {
-          success: true,
-          sessions: resolvedList,
+          sessions: sessionList,
         }
       },
     }),
 
-    searchFiles: tool({
-      description: 'Search for files in a folder',
-      inputSchema: z.object({
-        folder: z
-          .string()
-          .optional()
-          .describe(
-            'The folder path to search in, optional. only use if user specifically asks for it',
-          ),
-        query: z.string().describe('The search query for files'),
-      }),
-      execute: async ({ folder, query }) => {
-        const results = await getClient().find.files({
-          query: {
-            query,
-            directory: folder,
-          },
-        })
-
-        return {
-          success: true,
-          files: results.data || [],
-        }
-      },
-    }),
-
-    readSessionMessages: tool({
+    readMessages: tool({
       description: 'Read messages from a chat session',
       inputSchema: z.object({
         sessionId: z.string().describe('The session ID to read messages from'),
         lastAssistantOnly: z
           .boolean()
           .optional()
-          .describe('Only read the last assistant message'),
+          .describe('If true, return only the last assistant message'),
       }),
       execute: async ({ sessionId, lastAssistantOnly = false }) => {
-        if (lastAssistantOnly) {
-          const messages = await getClient().session.messages({
-            path: { id: sessionId },
-          })
+        const markdownResult = await markdownRenderer.generate({
+          sessionID: sessionId,
+          lastAssistantOnly,
+        })
 
-          if (!messages.data) {
-            return { success: false, error: 'No messages found' }
-          }
-
-          const assistantMessages = messages.data.filter(
-            (m) => m.info.role === 'assistant',
-          )
-
-          if (assistantMessages.length === 0) {
-            return {
-              success: false,
-              error: 'No assistant messages found',
-            }
-          }
-
-          const lastMessage = assistantMessages[assistantMessages.length - 1]
-          const status =
-            'completed' in lastMessage!.info.time &&
-            lastMessage!.info.time.completed
-              ? 'completed'
-              : 'in_progress'
-
-          const markdown = await markdownRenderer.generate({
-            sessionID: sessionId,
-            lastAssistantOnly: true,
-          })
-
-          return {
-            success: true,
-            markdown,
-            status,
-          }
-        } else {
-          const markdown = await markdownRenderer.generate({
-            sessionID: sessionId,
-          })
-
-          const messages = await getClient().session.messages({
-            path: { id: sessionId },
-          })
-          const lastMessage = messages.data?.[messages.data.length - 1]
-          const status =
-            lastMessage?.info.role === 'assistant' &&
-            lastMessage?.info.time &&
-            'completed' in lastMessage.info.time &&
-            !lastMessage.info.time.completed
-              ? 'in_progress'
-              : 'completed'
-
-          return {
-            success: true,
-            markdown,
-            status,
-          }
+        return {
+          markdown: errore.unwrapOr(markdownResult, ''),
         }
       },
     }),
 
-    abortChat: tool({
-      description: 'Abort/stop an in-progress chat session',
+    abortSession: tool({
+      description: 'Abort an active chat session',
       inputSchema: z.object({
         sessionId: z.string().describe('The session ID to abort'),
       }),
       execute: async ({ sessionId }) => {
-        try {
-          const result = await getClient().session.abort({
-            path: { id: sessionId },
-          })
-
-          if (!result.data) {
-            return {
-              success: false,
-              error: 'Failed to abort session',
-            }
-          }
-
-          return {
-            success: true,
-            sessionId,
-            message: 'Session aborted successfully',
-          }
-        } catch (error) {
-          return {
-            success: false,
-            error:
-              error instanceof Error ? error.message : 'Unknown error occurred',
-          }
-        }
-      },
-    }),
-
-    getModels: tool({
-      description: 'Get all available AI models from all providers',
-      inputSchema: z.object({}),
-      execute: async () => {
-        try {
-          const providersResponse = await getClient().config.providers({})
-          const providers: Provider[] = providersResponse.data?.providers || []
-
-          const models: Array<{ providerId: string; modelId: string }> = []
-
-          providers.forEach((provider) => {
-            if (provider.models && typeof provider.models === 'object') {
-              Object.entries(provider.models).forEach(([modelId, model]) => {
-                models.push({
-                  providerId: provider.id,
-                  modelId: modelId,
-                })
-              })
-            }
-          })
-
-          return {
-            success: true,
-            models,
-            totalCount: models.length,
-          }
-        } catch (error) {
-          return {
-            success: false,
-            error:
-              error instanceof Error ? error.message : 'Failed to fetch models',
-            models: [],
-          }
-        }
+        await getClient().session.abort({ path: { id: sessionId } })
+        return { success: true }
       },
     }),
   }
 
-  return {
-    tools,
-    providers,
-  }
+  return tools
+}
+
+export async function startStandaloneToolsServer({
+  port,
+  directory,
+  onReady,
+}: {
+  port?: number
+  directory: string
+  onReady?: () => void
+}) {
+  const serverPort = port || 7880
+  const server = net.createServer()
+
+  const serverProcess = await new Promise<ChildProcess>((resolve) => {
+    server.listen(serverPort, async () => {
+      toolsLogger.log(`Starting tools server on port ${serverPort}`)
+      const worker = spawn('bun', ['src/genai-worker.ts'], {
+        env: {
+          ...process.env,
+          GENAI_TOOLS_PORT: serverPort.toString(),
+          GENAI_TOOLS_DIR: directory,
+        },
+        stdio: ['ignore', 'inherit', 'inherit'],
+      })
+
+      resolve(worker)
+    })
+  })
+
+  onReady?.()
+  return serverProcess
+}
+
+export async function createStandaloneToolsServer({
+  port,
+  directory,
+}: {
+  port?: number
+  directory: string
+}) {
+  const serverPort = port || 7880
+  const server = net.createServer()
+
+  return new Promise<OpencodeClient>((resolve) => {
+    server.listen(serverPort, async () => {
+      toolsLogger.log(`Starting tools server on port ${serverPort}`)
+
+      const client = createOpencodeClient({
+        baseUrl: `http://127.0.0.1:${serverPort}`,
+      })
+
+      resolve(client)
+    })
+  })
+}
+
+export async function isToolsServerRunning({ port }: { port: number }) {
+  return new Promise<boolean>((resolve) => {
+    const socket = net.createConnection(port, '127.0.0.1')
+    socket.on('connect', () => {
+      socket.end()
+      resolve(true)
+    })
+    socket.on('error', () => {
+      resolve(false)
+    })
+  })
 }

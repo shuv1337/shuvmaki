@@ -6,13 +6,33 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
 import net from 'node:net'
-import { createOpencodeClient, type OpencodeClient, type Config } from '@opencode-ai/sdk'
+import os from 'node:os'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+import { createOpencodeClient, type OpencodeClient, type Config as SdkConfig } from '@opencode-ai/sdk'
+import { getBotToken } from './database.js'
+import { getDataDir } from './config.js'
+
+// SDK Config type is simplified; opencode accepts nested permission objects with path patterns
+type PermissionAction = 'ask' | 'allow' | 'deny'
+type PermissionRule = PermissionAction | Record<string, PermissionAction>
+type Config = Omit<SdkConfig, 'permission'> & {
+  permission?: {
+    edit?: PermissionRule
+    bash?: PermissionRule
+    external_directory?: PermissionRule
+    webfetch?: PermissionRule
+    [key: string]: PermissionRule | undefined
+  }
+}
 import {
   createOpencodeClient as createOpencodeClientV2,
   type OpencodeClient as OpencodeClientV2,
 } from '@opencode-ai/sdk/v2'
 import * as errore from 'errore'
-import { createLogger } from './logger.js'
+import { createLogger, LogPrefix } from './logger.js'
 import {
   DirectoryNotAccessibleError,
   ServerStartError,
@@ -21,31 +41,19 @@ import {
   type OpenCodeErrors,
 } from './errors.js'
 
-const opencodeLogger = createLogger('OPENCODE')
+const opencodeLogger = createLogger(LogPrefix.OPENCODE)
 
-type ServerEntry = {
-  process: ChildProcess | null
-  client: OpencodeClient
-  clientV2: OpencodeClientV2
-  port: number
-  isExternal: boolean
-}
-
-const opencodeServers = new Map<string, ServerEntry>()
+const opencodeServers = new Map<
+  string,
+  {
+    process: ChildProcess
+    client: OpencodeClient
+    clientV2: OpencodeClientV2
+    port: number
+  }
+>()
 
 const serverRetryCount = new Map<string, number>()
-
-const createFetchWithTimeout = ({ directory }: { directory: string }) => {
-  return (request: Request) => {
-    const headers = new Headers(request.headers)
-    headers.set('x-opencode-directory', directory)
-    const requestWithDirectory = new Request(request, { headers })
-    return fetch(requestWithDirectory, {
-      // @ts-ignore
-      timeout: false,
-    })
-  }
-}
 
 async function getOpenPort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -65,38 +73,25 @@ async function getOpenPort(): Promise<number> {
   })
 }
 
-async function waitForServer({
-  baseUrl,
-  maxAttempts = 30,
-}: {
-  baseUrl: string
-  maxAttempts?: number
-}): Promise<ServerStartError | true> {
-  const url = new URL(baseUrl)
-  const port = parseInt(url.port, 10) || (url.protocol === 'https:' ? 443 : 80)
-  const base = `${url.protocol}//${url.host}`
-
+async function waitForServer(port: number, maxAttempts = 30): Promise<ServerStartError | true> {
+  const endpoint = `http://127.0.0.1:${port}/api/health`
   for (let i = 0; i < maxAttempts; i++) {
-    const endpoints = [`${base}/api/health`, `${base}/`, `${base}/api`]
-
-    for (const endpoint of endpoints) {
-      const response = await errore.tryAsync({
-        try: () => fetch(endpoint),
-        catch: (e) => new FetchError({ url: endpoint, cause: e }),
-      })
-      if (errore.isError(response)) {
-        // Connection refused or other transient errors - continue polling
-        opencodeLogger.debug(`Server polling attempt failed: ${response.message}`)
-        continue
-      }
-      if (response.status < 500) {
-        return true
-      }
-      const body = await response.text()
-      // Fatal errors that won't resolve with retrying
-      if (body.includes('BunInstallFailedError')) {
-        return new ServerStartError({ port, reason: body.slice(0, 200) })
-      }
+    const response = await errore.tryAsync({
+      try: () => fetch(endpoint),
+      catch: (e) => new FetchError({ url: endpoint, cause: e }),
+    })
+    if (response instanceof Error) {
+      // Connection refused or other transient errors - continue polling
+      await new Promise((resolve) => setTimeout(resolve, 1000))
+      continue
+    }
+    if (response.status < 500) {
+      return true
+    }
+    const body = await response.text()
+    // Fatal errors that won't resolve with retrying
+    if (body.includes('BunInstallFailedError')) {
+      return new ServerStartError({ port, reason: body.slice(0, 200) })
     }
     await new Promise((resolve) => setTimeout(resolve, 1000))
   }
@@ -104,70 +99,18 @@ async function waitForServer({
 }
 
 /**
- * Connect to an existing shuvcode server instead of spawning a new one.
- * Use this when you have a server already running (e.g., from `shuvcode serve`).
+ * Initialize OpenCode server for a directory.
+ * @param directory - The directory to run the server in (cwd)
+ * @param options.originalRepoDirectory - For worktrees: the original repo directory to allow access to
  */
-export async function connectToExistingServer({
-  directory,
-  serverUrl,
-}: {
-  directory: string
-  serverUrl: string
-}): Promise<OpenCodeErrors | (() => OpencodeClient)> {
-  const url = new URL(serverUrl)
-  const port = parseInt(url.port, 10) || (url.protocol === 'https:' ? 443 : 80)
-
-  opencodeLogger.log(
-    `Connecting to existing server at ${serverUrl} for directory: ${directory}`,
-  )
-
-  const waitResult = await waitForServer({ baseUrl: serverUrl })
-  if (errore.isError(waitResult)) {
-    return waitResult
-  }
-
-  opencodeLogger.log(`External server ready on port ${port}`)
-
-  const fetchWithTimeout = createFetchWithTimeout({ directory })
-
-  const client = createOpencodeClient({
-    baseUrl: serverUrl,
-    fetch: fetchWithTimeout,
-  })
-
-  const clientV2 = createOpencodeClientV2({
-    baseUrl: serverUrl,
-    fetch: fetchWithTimeout as typeof fetch,
-  })
-
-  opencodeServers.set(directory, {
-    process: null,
-    client,
-    clientV2,
-    port,
-    isExternal: true,
-  })
-
-  return () => {
-    const entry = opencodeServers.get(directory)
-    if (!entry?.client) {
-      throw new ServerNotReadyError({ directory })
-    }
-    return entry.client
-  }
-}
-
 export async function initializeOpencodeForDirectory(
   directory: string,
+  options?: { originalRepoDirectory?: string },
 ): Promise<OpenCodeErrors | (() => OpencodeClient)> {
   const existing = opencodeServers.get(directory)
-  const isAlive = existing
-    ? existing.isExternal || (existing.process && !existing.process.killed)
-    : false
-
-  if (existing && isAlive) {
+  if (existing && !existing.process.killed) {
     opencodeLogger.log(
-      `Reusing existing ${existing.isExternal ? 'external' : 'spawned'} server on port ${existing.port} for directory: ${directory}`,
+      `Reusing existing server on port ${existing.port} for directory: ${directory}`,
     )
     return () => {
       const entry = opencodeServers.get(directory)
@@ -178,11 +121,6 @@ export async function initializeOpencodeForDirectory(
     }
   }
 
-  const externalServerUrl = process.env.SHUVCODE_SERVER_URL
-  if (externalServerUrl) {
-    return connectToExistingServer({ directory, serverUrl: externalServerUrl })
-  }
-
   // Verify directory exists and is accessible before spawning
   const accessCheck = errore.tryFn({
     try: () => {
@@ -190,54 +128,62 @@ export async function initializeOpencodeForDirectory(
     },
     catch: () => new DirectoryNotAccessibleError({ directory }),
   })
-  if (errore.isError(accessCheck)) {
+  if (accessCheck instanceof Error) {
     return accessCheck
   }
 
   const port = await getOpenPort()
 
-  const opencodeCommand = (() => {
-    if (process.env.OPENCODE_PATH) {
-      return process.env.OPENCODE_PATH
-    }
-    const possiblePaths = [
-      `${process.env.HOME}/.bun/bin/shuvcode`,
-      `${process.env.HOME}/.local/bin/shuvcode`,
-      `${process.env.HOME}/.bun/bin/opencode`,
-      `${process.env.HOME}/.local/bin/opencode`,
-      `${process.env.HOME}/.opencode/bin/opencode`,
-      '/usr/local/bin/shuvcode',
-      '/usr/local/bin/opencode',
-    ]
-    for (const p of possiblePaths) {
-      try {
-        fs.accessSync(p, fs.constants.X_OK)
-        return p
-      } catch {
-        // continue
-      }
-    }
-    // Fallback to PATH lookup
-    return 'shuvcode'
-  })()
+  const opencodeCommand = process.env.OPENCODE_PATH || 'opencode'
+
+  // Normalize path separators for cross-platform compatibility (Windows uses backslashes)
+  const tmpdir = os.tmpdir().replaceAll('\\', '/')
+  const originalRepo = options?.originalRepoDirectory?.replaceAll('\\', '/')
+  const normalizedDirectory = directory.replaceAll('\\', '/')
+
+  // Build external_directory permissions, optionally including original repo for worktrees
+  const externalDirectoryPermissions: Record<string, PermissionAction> = {
+    '*': 'ask',
+    '/tmp': 'allow',
+    '/tmp/*': 'allow',
+    '/private/tmp': 'allow',
+    '/private/tmp/*': 'allow',
+    [tmpdir]: 'allow',
+    [`${tmpdir}/*`]: 'allow',
+    [normalizedDirectory]: 'allow',
+    [`${normalizedDirectory}/*`]: 'allow',
+  }
+  if (originalRepo) {
+    externalDirectoryPermissions[originalRepo] = 'allow'
+    externalDirectoryPermissions[`${originalRepo}/*`] = 'allow'
+  }
+
+  // Get bot token for plugin to use Discord API
+  const botTokenFromDb = await getBotToken()
+  const kimakiBotToken = process.env.KIMAKI_BOT_TOKEN || botTokenFromDb?.token
 
   const serverProcess = spawn(opencodeCommand, ['serve', '--port', port.toString()], {
     stdio: 'pipe',
     detached: false,
     cwd: directory,
+    shell: true, // Required for .cmd files on Windows
     env: {
       ...process.env,
       OPENCODE_CONFIG_CONTENT: JSON.stringify({
         $schema: 'https://opencode.ai/config.json',
         lsp: false,
         formatter: false,
+        plugin: [new URL('../src/opencode-plugin.ts', import.meta.url).href],
         permission: {
           edit: 'allow',
           bash: 'allow',
+          external_directory: externalDirectoryPermissions,
           webfetch: 'allow',
         },
       } satisfies Config),
       OPENCODE_PORT: port.toString(),
+      KIMAKI_DATA_DIR: getDataDir(),
+      ...(kimakiBotToken && { KIMAKI_BOT_TOKEN: kimakiBotToken }),
     },
   })
 
@@ -270,7 +216,7 @@ export async function initializeOpencodeForDirectory(
           `Restarting server for directory: ${directory} (attempt ${retryCount + 1}/5)`,
         )
         initializeOpencodeForDirectory(directory).then((result) => {
-          if (errore.isError(result)) {
+          if (result instanceof Error) {
             opencodeLogger.error(`Failed to restart opencode server:`, result)
           }
         })
@@ -282,9 +228,8 @@ export async function initializeOpencodeForDirectory(
     }
   })
 
-  const baseUrl = `http://127.0.0.1:${port}`
-  const waitResult = await waitForServer({ baseUrl })
-  if (errore.isError(waitResult)) {
+  const waitResult = await waitForServer(port)
+  if (waitResult instanceof Error) {
     // Dump buffered logs on failure
     opencodeLogger.error(`Server failed to start for ${directory}:`)
     for (const line of logBuffer) {
@@ -294,7 +239,12 @@ export async function initializeOpencodeForDirectory(
   }
   opencodeLogger.log(`Server ready on port ${port}`)
 
-  const fetchWithTimeout = createFetchWithTimeout({ directory })
+  const baseUrl = `http://127.0.0.1:${port}`
+  const fetchWithTimeout = (request: Request) =>
+    fetch(request, {
+      // @ts-ignore
+      timeout: false,
+    })
 
   const client = createOpencodeClient({
     baseUrl,
@@ -311,7 +261,6 @@ export async function initializeOpencodeForDirectory(
     client,
     clientV2,
     port,
-    isExternal: false,
   })
 
   return () => {
@@ -335,4 +284,34 @@ export function getOpencodeServerPort(directory: string): number | null {
 export function getOpencodeClientV2(directory: string): OpencodeClientV2 | null {
   const entry = opencodeServers.get(directory)
   return entry?.clientV2 ?? null
+}
+
+/**
+ * Restart the opencode server for a directory.
+ * Kills the existing process and reinitializes a new one.
+ * Used for resolving opencode state issues, refreshing auth, plugins, etc.
+ */
+export async function restartOpencodeServer(directory: string): Promise<OpenCodeErrors | true> {
+  const existing = opencodeServers.get(directory)
+
+  if (existing) {
+    opencodeLogger.log(`Killing existing server for directory: ${directory} (pid: ${existing.process.pid})`)
+    // Reset retry count so the exit handler doesn't auto-restart
+    serverRetryCount.set(directory, 999)
+    existing.process.kill('SIGTERM')
+    opencodeServers.delete(directory)
+    // Give the process time to fully terminate
+    await new Promise((resolve) => {
+      setTimeout(resolve, 1000)
+    })
+  }
+
+  // Reset retry count for the fresh start
+  serverRetryCount.delete(directory)
+
+  const result = await initializeOpencodeForDirectory(directory)
+  if (result instanceof Error) {
+    return result
+  }
+  return true
 }

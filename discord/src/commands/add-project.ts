@@ -3,14 +3,14 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import type { CommandContext, AutocompleteContext } from './types.js'
-import { getDatabase } from '../database.js'
+import { findChannelsByDirectory, getAllTextChannelDirectories } from '../database.js'
 import { initializeOpencodeForDirectory } from '../opencode.js'
 import { createProjectChannels } from '../channel-management.js'
-import { createLogger } from '../logger.js'
+import { createLogger, LogPrefix } from '../logger.js'
 import { abbreviatePath } from '../utils.js'
 import * as errore from 'errore'
 
-const logger = createLogger('ADD-PROJECT')
+const logger = createLogger(LogPrefix.ADD_PROJECT)
 
 export async function handleAddProjectCommand({ command, appId }: CommandContext): Promise<void> {
   await command.deferReply({ ephemeral: false })
@@ -26,7 +26,7 @@ export async function handleAddProjectCommand({ command, appId }: CommandContext
   try {
     const currentDir = process.cwd()
     const getClient = await initializeOpencodeForDirectory(currentDir)
-    if (errore.isError(getClient)) {
+    if (getClient instanceof Error) {
       await command.editReply(getClient.message)
       return
     }
@@ -51,16 +51,14 @@ export async function handleAddProjectCommand({ command, appId }: CommandContext
       return
     }
 
-    const db = getDatabase()
-    const existingChannel = db
-      .prepare(
-        'SELECT channel_id FROM channel_directories WHERE directory = ? AND channel_type = ?',
-      )
-      .get(directory, 'text') as { channel_id: string } | undefined
+    const existingChannels = await findChannelsByDirectory({
+      directory,
+      channelType: 'text',
+    })
 
-    if (existingChannel) {
+    if (existingChannels.length > 0) {
       await command.editReply(
-        `A channel already exists for this directory: <#${existingChannel.channel_id}>`,
+        `A channel already exists for this directory: <#${existingChannels[0]!.channel_id}>`,
       )
       return
     }
@@ -72,8 +70,9 @@ export async function handleAddProjectCommand({ command, appId }: CommandContext
       botName: command.client.user?.username,
     })
 
+    const voiceInfo = voiceChannelId ? `\n🔊 Voice: <#${voiceChannelId}>` : ''
     await command.editReply(
-      `✅ Created channels for project:\n📝 Text: <#${textChannelId}>\n🔊 Voice: <#${voiceChannelId}>\n📁 Directory: \`${directory}\``,
+      `✅ Created channels for project:\n📝 Text: <#${textChannelId}>${voiceInfo}\n📁 Directory: \`${directory}\``,
     )
 
     logger.log(`Created channels for project ${channelName} at ${directory}`)
@@ -94,7 +93,7 @@ export async function handleAddProjectAutocomplete({
   try {
     const currentDir = process.cwd()
     const getClient = await initializeOpencodeForDirectory(currentDir)
-    if (errore.isError(getClient)) {
+    if (getClient instanceof Error) {
       await interaction.respond([])
       return
     }
@@ -105,11 +104,8 @@ export async function handleAddProjectAutocomplete({
       return
     }
 
-    const db = getDatabase()
-    const existingDirs = db
-      .prepare('SELECT DISTINCT directory FROM channel_directories WHERE channel_type = ?')
-      .all('text') as { directory: string }[]
-    const existingDirSet = new Set(existingDirs.map((row) => row.directory))
+    const existingDirs = await getAllTextChannelDirectories()
+    const existingDirSet = new Set(existingDirs)
 
     const availableProjects = projectsResponse.data.filter((project) => {
       if (existingDirSet.has(project.worktree)) {

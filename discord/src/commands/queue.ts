@@ -2,7 +2,7 @@
 
 import { ChannelType, type ThreadChannel } from 'discord.js'
 import type { CommandContext } from './types.js'
-import { getDatabase } from '../database.js'
+import { getThreadSession } from '../database.js'
 import {
   resolveTextChannel,
   getKimakiMetadata,
@@ -16,11 +16,11 @@ import {
   getQueueLength,
   clearQueue,
 } from '../session-handler.js'
-import { createLogger } from '../logger.js'
+import { createLogger, LogPrefix } from '../logger.js'
 
-const logger = createLogger('QUEUE')
+const logger = createLogger(LogPrefix.QUEUE)
 
-export async function handleQueueCommand({ command }: CommandContext): Promise<void> {
+export async function handleQueueCommand({ command, appId }: CommandContext): Promise<void> {
   const message = command.options.getString('message', true)
   const channel = command.channel
 
@@ -48,11 +48,9 @@ export async function handleQueueCommand({ command }: CommandContext): Promise<v
     return
   }
 
-  const row = getDatabase()
-    .prepare('SELECT session_id FROM thread_sessions WHERE thread_id = ?')
-    .get(channel.id) as { session_id: string } | undefined
+  const sessionId = await getThreadSession(channel.id)
 
-  if (!row?.session_id) {
+  if (!sessionId) {
     await command.reply({
       content: 'No active session in this thread. Send a message directly instead.',
       ephemeral: true,
@@ -62,12 +60,16 @@ export async function handleQueueCommand({ command }: CommandContext): Promise<v
   }
 
   // Check if there's an active request running
-  const hasActiveRequest = abortControllers.has(row.session_id)
+  const existingController = abortControllers.get(sessionId)
+  const hasActiveRequest = Boolean(existingController && !existingController.signal.aborted)
+  if (existingController && existingController.signal.aborted) {
+    abortControllers.delete(sessionId)
+  }
 
   if (!hasActiveRequest) {
     // No active request, send immediately
     const textChannel = await resolveTextChannel(channel as ThreadChannel)
-    const { projectDirectory } = getKimakiMetadata(textChannel)
+    const { projectDirectory } = await getKimakiMetadata(textChannel)
 
     if (!projectDirectory) {
       await command.reply({
@@ -90,6 +92,7 @@ export async function handleQueueCommand({ command }: CommandContext): Promise<v
       thread: channel as ThreadChannel,
       projectDirectory,
       channelId: textChannel?.id || channel.id,
+      appId,
     }).catch(async (e) => {
       logger.error(`[QUEUE] Failed to send message:`, e)
       const errorMsg = e instanceof Error ? e.message : String(e)
@@ -107,6 +110,7 @@ export async function handleQueueCommand({ command }: CommandContext): Promise<v
       userId: command.user.id,
       username: command.user.displayName,
       queuedAt: Date.now(),
+      appId,
     },
   })
 

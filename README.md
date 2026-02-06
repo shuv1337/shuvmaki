@@ -1,31 +1,25 @@
 <div align='center'>
     <br/>
     <br/>
-    <h3>shuvmaki</h3>
+    <h3>kimaki</h3>
     <p>Iron Man's Jarvis for coding agents, inside Discord</p>
     <br/>
     <br/>
 </div>
 
-> **Fork Notice:** This is a fork of [kimaki](https://github.com/remorses/kimaki) specifically designed to work with [shuvcode](https://github.com/shuv1337/shuvcode) servers (a fork of OpenCode).
-
-Shuvmaki is a Discord bot that lets you control shuvcode coding sessions from Discord. Send a message in a Discord channel → an AI agent edits code on your machine.
+Kimaki is a Discord bot that lets you control [OpenCode](https://opencode.ai) coding sessions from Discord. Send a message in a Discord channel → an AI agent edits code on your machine.
 
 ## Quick Start
 
 ```bash
-# Clone and install
-git clone https://github.com/shuv1337/shuvmaki.git
-cd shuvmaki/discord
-bun install
-bun run dev
+npx -y kimaki@latest
 ```
 
-The CLI guides you through everything.
+That's it. The CLI guides you through everything.
 
-## What is Shuvmaki?
+## What is Kimaki?
 
-Shuvmaki connects Discord to shuvcode, a coding agent forked from OpenCode. Each Discord channel is linked to a project directory on your machine. When you send a message in that channel, Shuvmaki starts a shuvcode session that can:
+Kimaki connects Discord to OpenCode, a coding agent similar to Claude Code. Each Discord channel is linked to a project directory on your machine. When you send a message in that channel, Kimaki starts an OpenCode session that can:
 
 - Read and edit files
 - Run terminal commands
@@ -36,22 +30,18 @@ Think of it as texting your codebase. You describe what you want, the AI does it
 
 ## Installation & Setup
 
-Clone the repo and run the CLI:
+Run the CLI and follow the interactive prompts:
 
 ```bash
-git clone https://github.com/shuv1337/shuvmaki.git
-cd shuvmaki/discord
-bun install
-bun run dev
+npx -y kimaki@latest
 ```
 
 The setup wizard will:
 
 1. **Create a Discord Bot** - Walk you through creating a bot at [discord.com/developers](https://discord.com/developers/applications)
-2. **Configure Bot Settings** - Enable required intents (Message Content, Server Members, Voice States)
+2. **Configure Bot Settings** - Enable required intents (Message Content, Server Members)
 3. **Install to Your Server** - Generate an invite link with proper permissions
-4. **Select Projects** - Choose which shuvcode projects to add as Discord channels
-5. **Voice Setup (Optional)** - Request a Google Gemini API key for voice features
+4. **Select Projects** - Choose which OpenCode projects to add as Discord channels
 
 Keep the CLI running. It's the bridge between Discord and your machine.
 
@@ -59,12 +49,12 @@ Keep the CLI running. It's the bridge between Discord and your machine.
 
 **Each Discord bot you create is tied to one machine.** This is by design.
 
-When you run shuvmaki on a computer, it spawns shuvcode servers for projects on that machine. The bot can only access directories on the machine where it's running.
+When you run `kimaki` on a computer, it spawns OpenCode servers for projects on that machine. The bot can only access directories on the machine where it's running.
 
 To control multiple machines:
 
 1. Create a separate Discord bot for each machine
-2. Run shuvmaki on each machine with its own bot token
+2. Run `kimaki` on each machine with its own bot token
 3. Add all bots to the same Discord server
 
 Each channel shows which bot (machine) it's connected to. You can have channels from different machines in the same server, controlled by different bots.
@@ -119,9 +109,9 @@ You can even link the same project to channels in multiple servers - both will p
 
 **Add all your bots to that server.** One server, multiple machines. Each channel is clearly labeled with its project directory.
 
-**Use the "Kimaki" role for team access.** Create a role named "Kimaki" or "Shuvmaki" (case-insensitive) and assign it to users who should be able to trigger sessions.
+**Use the "Kimaki" role for team access.** Create a role named "Kimaki" (case-insensitive) and assign it to users who should be able to trigger sessions.
 
-**Send long prompts as file attachments.** Discord has character limits for messages. Tap the plus icon and use "Send message as file" for longer prompts. Shuvmaki reads file attachments as your message.
+**Send long prompts as file attachments.** Discord has character limits for messages. Tap the plus icon and use "Send message as file" for longer prompts. Kimaki reads file attachments as your message.
 
 ## Required Permissions
 
@@ -134,27 +124,32 @@ Only users with these Discord permissions can interact with the bot:
 
 Messages from users without these permissions are ignored.
 
+### Blocking Access with "no-kimaki" Role
+
+Create a role named **"no-kimaki"** (case-insensitive) to block specific users from using the bot, even if they have other permissions like Server Owner or Administrator.
+
+This implements the "four-eyes principle" - it adds friction to prevent accidental usage. Even if you're a server owner, you must remove this role to interact with the bot.
+
+**Use cases:**
+- Prevent accidental bot triggers by owners who share servers
+- Temporarily disable access for specific users
+- Break-glass scenario: removing the role is a deliberate action
+
 ## Features
 
 ### Text Messages
 
-Send any message in a channel linked to a project. Shuvmaki creates a thread and starts a shuvcode session.
+Send any message in a channel linked to a project. Kimaki creates a thread and starts an OpenCode session.
 
 ### File Attachments
 
-Attach images, code files, or any other files to your message. Shuvmaki includes them in the session context.
+Attach images, code files, or any other files to your message. Kimaki includes them in the session context.
 
 ### Voice Messages
 
-Record a voice message in Discord. Shuvmaki transcribes it using Google's Gemini API and processes it as text. The transcription uses your project's file tree for accuracy, recognizing function names and file paths you mention.
+Record a voice message in Discord. Kimaki transcribes it using Google's Gemini API and processes it as text. The transcription uses your project's file tree for accuracy, recognizing function names and file paths you mention.
 
 Requires a Gemini API key (prompted during setup).
-
-### Voice Channels
-
-Join a voice channel linked to a project for real-time voice interaction. Talk naturally, and Shuvmaki responds with voice—like having Jarvis for your codebase.
-
-Uses Gemini's native audio model for low-latency conversation.
 
 ### Session Management
 
@@ -170,7 +165,7 @@ Use `/queue <message>` to queue a follow-up message while the AI is still respon
 
 ### Text Interaction
 
-Just send a message in any channel linked to a project. Shuvmaki handles the rest.
+Just send a message in any channel linked to a project. Kimaki handles the rest.
 
 ### Slash Commands
 
@@ -180,10 +175,10 @@ Just send a message in any channel linked to a project. Shuvmaki handles the res
 | `/resume <session>` | Resume a previous session (with autocomplete) |
 | `/abort` | Stop the current running session |
 | `/add-project <project>` | Create channels for an existing OpenCode project |
-| `/remove-project <project>` | Remove Discord channels for a project |
 | `/create-new-project <name>` | Create a new project folder and start a session |
+| `/new-worktree <name>` | Create a git worktree and start a session (⬦ prefix) |
+| `/merge-worktree` | Merge worktree branch into default branch |
 | `/model` | Change the AI model for this channel or session |
-| `/variant` | Select a model variant (e.g., thinking modes) |
 | `/agent` | Change the agent for this channel or session |
 | `/share` | Generate a public URL to share the current session |
 | `/fork` | Fork the session from a previous message |
@@ -196,20 +191,49 @@ Just send a message in any channel linked to a project. Shuvmaki handles the res
 
 ```bash
 # Start the bot (interactive setup on first run)
-cd shuvmaki/discord && bun run dev
+npx -y kimaki@latest
 
-# Upload files to a Discord thread (local CLI)
-cd shuvmaki/discord && bun src/cli.ts upload-to-discord --session <session-id> <file1> [file2...]
-
-# Upload files to a Discord thread (published CLI)
+# Upload files to a Discord thread
 npx -y kimaki upload-to-discord --session <session-id> <file1> [file2...]
 
 # Start a session programmatically (useful for CI/automation)
 npx -y kimaki send --channel <channel-id> --prompt "your prompt"
 
+# Start a session in an isolated git worktree
+npx -y kimaki send --channel <channel-id> --prompt "your prompt" --worktree feature-name
+
 # Send notification without starting AI session (reply to start session later)
 npx -y kimaki send --channel <channel-id> --prompt "User cancelled subscription" --notify-only
+
+# Create Discord channels for a project directory (without starting a session)
+npx -y kimaki add-project [directory]
 ```
+
+## Add Project Channels
+
+Create Discord channels for a project directory without starting a session. Useful for automation and scripting.
+
+```bash
+# Add current directory as a project
+npx -y kimaki add-project
+
+# Add a specific directory
+npx -y kimaki add-project /path/to/project
+
+# Specify guild when bot is in multiple servers
+npx -y kimaki add-project ./myproject --guild 123456789
+
+# In CI with env var for bot token
+KIMAKI_BOT_TOKEN=xxx npx -y kimaki add-project --app-id 987654321
+```
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `[directory]` | Project directory path (defaults to current directory) |
+| `-g, --guild <guildId>` | Discord guild/server ID (auto-detects if bot is in only one server) |
+| `-a, --app-id <appId>` | Bot application ID (reads from database if available) |
 
 ## Programmatically Start Sessions
 
@@ -230,6 +254,7 @@ npx -y kimaki send \
   --name <name>           # Optional: Thread name (defaults to prompt preview)
   --app-id <app-id>       # Optional: Bot application ID for validation
   --notify-only           # Optional: Create notification thread without starting AI session
+  --worktree <name>       # Optional: Create git worktree for isolated session
 ```
 
 ### Example: GitHub Actions on New Issues
@@ -274,12 +299,11 @@ Use `--notify-only` for notifications that don't need immediate AI response (e.g
 
 ## How It Works
 
-**SQLite Database** - Shuvmaki stores state in `<data-dir>/discord-sessions.db` (default: `~/.kimaki/discord-sessions.db`). This maps Discord threads to shuvcode sessions, channels to directories, and stores your bot credentials. Use `--data-dir` to change the location.
+**SQLite Database** - Kimaki stores state in `<data-dir>/discord-sessions.db` (default: `~/.kimaki/discord-sessions.db`). This maps Discord threads to OpenCode sessions, channels to directories, and stores your bot credentials. Use `--data-dir` to change the location.
 
-**Shuvcode Servers** - When you message a channel, Shuvmaki spawns (or reuses) a shuvcode server for that project directory. The server handles the actual AI coding session.
+**OpenCode Servers** - When you message a channel, Kimaki spawns (or reuses) an OpenCode server for that project directory. The server handles the actual AI coding session.
 
 **Channel Metadata** - Each channel's topic contains XML metadata linking it to a directory and bot:
-
 ```xml
 <kimaki><directory>/path/to/project</directory><app>bot_id</app></kimaki>
 ```
@@ -290,7 +314,7 @@ Use `--notify-only` for notifications that don't need immediate AI response (e.g
 
 ## Model & Agent Configuration
 
-Set the AI model in your project's `opencode.json` (shuvcode uses the same config format):
+Set the AI model in your project's `opencode.json`:
 
 ```json
 {
@@ -301,7 +325,6 @@ Set the AI model in your project's `opencode.json` (shuvcode uses the same confi
 Format: `provider/model-name`
 
 **Examples:**
-
 - `anthropic/claude-sonnet-4-20250514` - Claude Sonnet 4
 - `anthropic/claude-opus-4-20250514` - Claude Opus 4
 - `openai/gpt-4o` - GPT-4o
@@ -310,23 +333,3 @@ Format: `provider/model-name`
 Or use these Discord commands to change settings per channel/session:
 - `/model` - Select a different AI model
 - `/agent` - Select a different agent (if you have multiple agents configured in your project)
-- `/variant` - Select a model variant (e.g., thinking modes)
-
-## Differences from Kimaki
-
-Shuvmaki is a fork of [kimaki](https://github.com/remorses/kimaki) with the following changes:
-
-- **Shuvcode Integration** - Connects to [shuvcode](https://github.com/shuv1337/shuvcode) servers instead of OpenCode
-- **External Server Support** - Set `SHUVCODE_SERVER_URL` to connect to an existing shuvcode server
-- **v2 SDK Support** - Uses the shuvcode v2 SDK for improved API communication
-- **Model Variants** - New `/variant` command to select model-specific configurations (e.g., thinking modes)
-- **Variant Picker in /model** - When selecting a model that has variants, automatically shows a variant picker
-
-## Upstream
-
-This fork tracks [remorses/kimaki](https://github.com/remorses/kimaki). To sync with upstream:
-
-```bash
-git fetch upstream
-git merge upstream/main
-```

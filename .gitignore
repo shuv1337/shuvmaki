@@ -14,3 +14,7 @@ tmp
 
 # opensrc - source code for packages
 opensrc/
+__snapshots__
+traforo/dist/
+skills/jitter/dist/
+bin-local.sh

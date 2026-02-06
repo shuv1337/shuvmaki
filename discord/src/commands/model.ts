@@ -11,78 +11,39 @@ import {
 } from 'discord.js'
 import crypto from 'node:crypto'
 import {
-  getDatabase,
   setChannelModel,
   setSessionModel,
-  setSessionVariant,
-  setChannelVariant,
-  clearSessionVariant,
-  clearChannelVariant,
-  runModelMigrations,
+  getChannelModel,
+  getSessionModel,
+  getSessionAgent,
+  getChannelAgent,
+  getThreadSession,
+  getGlobalModel,
+  setGlobalModel,
 } from '../database.js'
-import {
-  initializeOpencodeForDirectory,
-  getOpencodeClientV2,
-} from '../opencode.js'
+import { initializeOpencodeForDirectory } from '../opencode.js'
 import { resolveTextChannel, getKimakiMetadata } from '../discord-utils.js'
-import { abortAndRetrySession } from '../session-handler.js'
-import { createLogger } from '../logger.js'
+import { abortAndRetrySession, getDefaultModel, type DefaultModelSource } from '../session-handler.js'
+import { createLogger, LogPrefix } from '../logger.js'
 import * as errore from 'errore'
 
-const modelLogger = createLogger('MODEL')
-
-// TTL for pending selection contexts (5 minutes)
-const PENDING_CONTEXT_TTL_MS = 5 * 60 * 1000
-
-type ModelContext = {
-  dir: string
-  channelId: string
-  sessionId?: string
-  isThread: boolean
-  providerId?: string
-  providerName?: string
-  thread?: ThreadChannel
-  createdAt: number
-}
-
-type ModelVariantContext = {
-  dir: string
-  channelId: string
-  sessionId?: string
-  isThread: boolean
-  providerId: string
-  providerName: string
-  modelId: string
-  modelName: string
-  thread?: ThreadChannel
-  createdAt: number
-}
+const modelLogger = createLogger(LogPrefix.MODEL)
 
 // Store context by hash to avoid customId length limits (Discord max: 100 chars)
-const pendingModelContexts = new Map<string, ModelContext>()
-
-// Store context for model variant selection (shown after model is selected if variants exist)
-const pendingModelVariantContexts = new Map<string, ModelVariantContext>()
-
-/**
- * Clean up expired pending contexts from both Maps.
- * Called before adding new contexts to prevent unbounded memory growth.
- */
-function cleanupExpiredContexts(): void {
-  const now = Date.now()
-  for (const [hash, context] of pendingModelContexts) {
-    if (now - context.createdAt > PENDING_CONTEXT_TTL_MS) {
-      pendingModelContexts.delete(hash)
-      modelLogger.log(`[MODEL] Cleaned up expired model context: ${hash}`)
-    }
+const pendingModelContexts = new Map<
+  string,
+  {
+    dir: string
+    channelId: string
+    sessionId?: string
+    isThread: boolean
+    providerId?: string
+    providerName?: string
+    thread?: ThreadChannel
+    appId?: string
+    selectedModelId?: string
   }
-  for (const [hash, context] of pendingModelVariantContexts) {
-    if (now - context.createdAt > PENDING_CONTEXT_TTL_MS) {
-      pendingModelVariantContexts.delete(hash)
-      modelLogger.log(`[MODEL] Cleaned up expired variant context: ${hash}`)
-    }
-  }
-}
+>()
 
 export type ProviderInfo = {
   id: string
@@ -97,40 +58,122 @@ export type ProviderInfo = {
   >
 }
 
+export type ModelSource =
+  | 'session'
+  | 'agent'
+  | 'channel'
+  | 'global'
+  | 'opencode-config'
+  | 'opencode-recent'
+  | 'opencode-provider-default'
+
+export type CurrentModelInfo =
+  | { type: 'session'; model: string; providerID: string; modelID: string }
+  | { type: 'agent'; model: string; providerID: string; modelID: string; agentName: string }
+  | { type: 'channel'; model: string; providerID: string; modelID: string }
+  | { type: 'global'; model: string; providerID: string; modelID: string }
+  | { type: 'opencode-config'; model: string; providerID: string; modelID: string }
+  | { type: 'opencode-recent'; model: string; providerID: string; modelID: string }
+  | { type: 'opencode-provider-default'; model: string; providerID: string; modelID: string }
+  | { type: 'none' }
+
+function parseModelId(modelString: string): { providerID: string; modelID: string } | undefined {
+  const [providerID, ...modelParts] = modelString.split('/')
+  const modelID = modelParts.join('/')
+  if (providerID && modelID) {
+    return { providerID, modelID }
+  }
+  return undefined
+}
+
 /**
- * Build variant options from model metadata.
- * Filters disabled variants, sorts alphabetically, limits to 24, adds Default option.
+ * Get the current model info for a channel/session, including where it comes from.
+ * Priority: session > agent > channel > global > opencode default
  */
-function buildVariantOptions(variants: {
-  [key: string]: { [key: string]: unknown }
-}): Array<{ label: string; value: string; description: string }> {
-  const entries = Object.entries(variants)
-    .filter(([, v]) => {
-      return !(v as { disabled?: boolean }).disabled
-    })
-    .sort(([a], [b]) => {
-      return a.localeCompare(b)
-    })
-    .slice(0, 24)
+export async function getCurrentModelInfo({
+  sessionId,
+  channelId,
+  appId,
+  agentPreference,
+  getClient,
+}: {
+  sessionId?: string
+  channelId?: string
+  appId?: string
+  agentPreference?: string
+  getClient: Awaited<ReturnType<typeof initializeOpencodeForDirectory>>
+}): Promise<CurrentModelInfo> {
+  if (getClient instanceof Error) {
+    return { type: 'none' }
+  }
 
-  const options = entries.map(([key, value]) => {
-    const description =
-      (value as { description?: string }).description || 'Model variant'
-    return {
-      label: key.slice(0, 100),
-      value: key,
-      description: description.slice(0, 100),
+  // 1. Check session model preference
+  if (sessionId) {
+    const sessionModel = await getSessionModel(sessionId)
+    if (sessionModel) {
+      const parsed = parseModelId(sessionModel)
+      if (parsed) {
+        return { type: 'session', model: sessionModel, ...parsed }
+      }
     }
-  })
+  }
 
-  // Add Default option at the end
-  options.push({
-    label: 'Default',
-    value: '__default__',
-    description: 'Use model without a specific variant',
-  })
+  // 2. Check agent's configured model
+  const effectiveAgent = agentPreference ?? (sessionId
+    ? (await getSessionAgent(sessionId)) || (channelId ? await getChannelAgent(channelId) : undefined)
+    : (channelId ? await getChannelAgent(channelId) : undefined))
+  if (effectiveAgent) {
+    const agentsResponse = await getClient().app.agents({})
+    if (agentsResponse.data) {
+      const agent = agentsResponse.data.find((a) => a.name === effectiveAgent)
+      if (agent?.model) {
+        const model = `${agent.model.providerID}/${agent.model.modelID}`
+        return {
+          type: 'agent',
+          model,
+          providerID: agent.model.providerID,
+          modelID: agent.model.modelID,
+          agentName: effectiveAgent,
+        }
+      }
+    }
+  }
 
-  return options
+  // 3. Check channel model preference
+  if (channelId) {
+    const channelModel = await getChannelModel(channelId)
+    if (channelModel) {
+      const parsed = parseModelId(channelModel)
+      if (parsed) {
+        return { type: 'channel', model: channelModel, ...parsed }
+      }
+    }
+  }
+
+  // 4. Check global model preference
+  if (appId) {
+    const globalModel = await getGlobalModel(appId)
+    if (globalModel) {
+      const parsed = parseModelId(globalModel)
+      if (parsed) {
+        return { type: 'global', model: globalModel, ...parsed }
+      }
+    }
+  }
+
+  // 5. Get opencode default (config > recent > provider default)
+  const defaultModel = await getDefaultModel({ getClient })
+  if (defaultModel) {
+    const model = `${defaultModel.providerID}/${defaultModel.modelID}`
+    return {
+      type: defaultModel.source,
+      model,
+      providerID: defaultModel.providerID,
+      modelID: defaultModel.modelID,
+    }
+  }
+
+  return { type: 'none' }
 }
 
 /**
@@ -149,9 +192,6 @@ export async function handleModelCommand({
   // Defer reply immediately to avoid 3-second timeout
   await interaction.deferReply({ ephemeral: true })
   modelLogger.log('[MODEL] Deferred reply')
-
-  // Ensure migrations are run
-  runModelMigrations()
 
   const channel = interaction.channel
 
@@ -177,19 +217,16 @@ export async function handleModelCommand({
   if (isThread) {
     const thread = channel as ThreadChannel
     const textChannel = await resolveTextChannel(thread)
-    const metadata = getKimakiMetadata(textChannel)
+    const metadata = await getKimakiMetadata(textChannel)
     projectDirectory = metadata.projectDirectory
     channelAppId = metadata.channelAppId
     targetChannelId = textChannel?.id || channel.id
 
     // Get session ID for this thread
-    const row = getDatabase()
-      .prepare('SELECT session_id FROM thread_sessions WHERE thread_id = ?')
-      .get(thread.id) as { session_id: string } | undefined
-    sessionId = row?.session_id
+    sessionId = await getThreadSession(thread.id)
   } else if (channel.type === ChannelType.GuildText) {
     const textChannel = channel as TextChannel
-    const metadata = getKimakiMetadata(textChannel)
+    const metadata = await getKimakiMetadata(textChannel)
     projectDirectory = metadata.projectDirectory
     channelAppId = metadata.channelAppId
     targetChannelId = channel.id
@@ -216,33 +253,23 @@ export async function handleModelCommand({
 
   try {
     const getClient = await initializeOpencodeForDirectory(projectDirectory)
-    if (errore.isError(getClient)) {
+    if (getClient instanceof Error) {
       await interaction.editReply({ content: getClient.message })
       return
     }
-    const clientV2 = getOpencodeClientV2(projectDirectory)
 
-    if (!clientV2) {
-      await interaction.editReply({
-        content: 'Failed to connect to OpenCode server',
-      })
-      return
-    }
+    const providersResponse = await getClient().provider.list({
+      query: { directory: projectDirectory },
+    })
 
-    const { data: providersData, error: providersError } =
-      await clientV2.provider.list({
-        directory: projectDirectory,
-      })
-
-    if (providersError || !providersData) {
-      modelLogger.error('[MODEL] Failed to fetch providers:', providersError)
+    if (!providersResponse.data) {
       await interaction.editReply({
         content: 'Failed to fetch providers',
       })
       return
     }
 
-    const { all: allProviders, connected } = providersData
+    const { all: allProviders, connected } = providersResponse.data
 
     // Filter to only connected providers (have credentials)
     const availableProviders = allProviders.filter((p) => {
@@ -252,22 +279,47 @@ export async function handleModelCommand({
     if (availableProviders.length === 0) {
       await interaction.editReply({
         content:
-          'No providers with credentials found. Use `/connect` in OpenCode TUI to add provider credentials.',
+          'No providers with credentials found. Use `/login` to connect a provider and add credentials.',
       })
       return
     }
 
-    // Clean up expired contexts before adding new one
-    cleanupExpiredContexts()
+    // Get current model info to display
+    const currentModelInfo = await getCurrentModelInfo({
+      sessionId,
+      channelId: targetChannelId,
+      appId: channelAppId || appId,
+      getClient,
+    })
+
+    const currentModelText = (() => {
+      switch (currentModelInfo.type) {
+        case 'session':
+          return `**Current (session override):** \`${currentModelInfo.model}\``
+        case 'agent':
+          return `**Current (agent "${currentModelInfo.agentName}"):** \`${currentModelInfo.model}\``
+        case 'channel':
+          return `**Current (channel override):** \`${currentModelInfo.model}\``
+        case 'global':
+          return `**Current (global default):** \`${currentModelInfo.model}\``
+        case 'opencode-config':
+        case 'opencode-recent':
+        case 'opencode-provider-default':
+          return `**Current (opencode default):** \`${currentModelInfo.model}\``
+        case 'none':
+          return '**Current:** none'
+      }
+    })()
 
     // Store context with a short hash key to avoid customId length limits
-    const context: ModelContext = {
+    // Use bot's appId if channel doesn't have one stored (older channels or channels migrated before appId tracking)
+    const context = {
       dir: projectDirectory,
       channelId: targetChannelId,
       sessionId: sessionId,
       isThread: isThread,
       thread: isThread ? (channel as ThreadChannel) : undefined,
-      createdAt: Date.now(),
+      appId: channelAppId || appId,
     }
     const contextHash = crypto.randomBytes(8).toString('hex')
     pendingModelContexts.set(contextHash, context)
@@ -277,11 +329,7 @@ export async function handleModelCommand({
       return {
         label: provider.name.slice(0, 100),
         value: provider.id,
-        description:
-          `${modelCount} model${modelCount !== 1 ? 's' : ''} available`.slice(
-            0,
-            100,
-          ),
+        description: `${modelCount} model${modelCount !== 1 ? 's' : ''} available`.slice(0, 100),
       }
     })
 
@@ -290,11 +338,10 @@ export async function handleModelCommand({
       .setPlaceholder('Select a provider')
       .addOptions(options)
 
-    const actionRow =
-      new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(selectMenu)
+    const actionRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(selectMenu)
 
     await interaction.editReply({
-      content: '**Set Model Preference**\nSelect a provider:',
+      content: `**Set Model Preference**\n${currentModelText}\nSelect a provider:`,
       components: [actionRow],
     })
   } catch (error) {
@@ -324,11 +371,7 @@ export async function handleProviderSelectMenu(
   const contextHash = customId.replace('model_provider:', '')
   const context = pendingModelContexts.get(contextHash)
 
-  // Check if context exists and is not expired
-  if (!context || Date.now() - context.createdAt > PENDING_CONTEXT_TTL_MS) {
-    if (context) {
-      pendingModelContexts.delete(contextHash)
-    }
+  if (!context) {
     await interaction.editReply({
       content: 'Selection expired. Please run /model again.',
       components: [],
@@ -347,30 +390,19 @@ export async function handleProviderSelectMenu(
 
   try {
     const getClient = await initializeOpencodeForDirectory(context.dir)
-    if (errore.isError(getClient)) {
+    if (getClient instanceof Error) {
       await interaction.editReply({
         content: getClient.message,
         components: [],
       })
       return
     }
-    const clientV2 = getOpencodeClientV2(context.dir)
 
-    if (!clientV2) {
-      await interaction.editReply({
-        content: 'Failed to connect to OpenCode server',
-        components: [],
-      })
-      return
-    }
+    const providersResponse = await getClient().provider.list({
+      query: { directory: context.dir },
+    })
 
-    const { data: providersData, error: providersError } =
-      await clientV2.provider.list({
-        directory: context.dir,
-      })
-
-    if (providersError || !providersData) {
-      modelLogger.error('[MODEL] Failed to fetch providers:', providersError)
+    if (!providersResponse.data) {
       await interaction.editReply({
         content: 'Failed to fetch providers',
         components: [],
@@ -378,7 +410,7 @@ export async function handleProviderSelectMenu(
       return
     }
 
-    const provider = providersData.all.find((p) => p.id === selectedProviderId)
+    const provider = providersResponse.data.all.find((p) => p.id === selectedProviderId)
 
     if (!provider) {
       await interaction.editReply({
@@ -433,8 +465,7 @@ export async function handleProviderSelectMenu(
       .setPlaceholder('Select a model')
       .addOptions(options)
 
-    const actionRow =
-      new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(selectMenu)
+    const actionRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(selectMenu)
 
     await interaction.editReply({
       content: `**Set Model Preference**\nProvider: **${provider.name}**\nSelect a model:`,
@@ -451,7 +482,7 @@ export async function handleProviderSelectMenu(
 
 /**
  * Handle the model select menu interaction.
- * If model has variants, shows variant picker. Otherwise stores model preference directly.
+ * Stores the model preference in the database.
  */
 export async function handleModelSelectMenu(
   interaction: StringSelectMenuInteraction,
@@ -468,16 +499,7 @@ export async function handleModelSelectMenu(
   const contextHash = customId.replace('model_select:', '')
   const context = pendingModelContexts.get(contextHash)
 
-  // Check if context exists, has required fields, and is not expired
-  if (
-    !context ||
-    !context.providerId ||
-    !context.providerName ||
-    Date.now() - context.createdAt > PENDING_CONTEXT_TTL_MS
-  ) {
-    if (context) {
-      pendingModelContexts.delete(contextHash)
-    }
+  if (!context || !context.providerId || !context.providerName) {
     await interaction.editReply({
       content: 'Selection expired. Please run /model again.',
       components: [],
@@ -498,122 +520,67 @@ export async function handleModelSelectMenu(
   const fullModelId = `${context.providerId}/${selectedModelId}`
 
   try {
-    // Fetch model metadata to check for variants
-    const clientV2 = getOpencodeClientV2(context.dir)
-    if (!clientV2) {
-      await interaction.editReply({
-        content: 'Failed to connect to OpenCode server',
-        components: [],
-      })
-      return
-    }
-
-    const { data: providersData, error: providersError } =
-      await clientV2.provider.list({
-        directory: context.dir,
-      })
-
-    if (providersError || !providersData) {
-      modelLogger.error('[MODEL] Failed to fetch providers:', providersError)
-      await interaction.editReply({
-        content: 'Failed to fetch model metadata',
-        components: [],
-      })
-      return
-    }
-
-    const provider = providersData.all.find((p) => {
-      return p.id === context.providerId
-    })
-    const model = provider?.models[selectedModelId]
-    const modelName = model?.name || selectedModelId
-
-    // Check if model has variants
-    const variants = model?.variants
-    const hasVariants = variants && Object.keys(variants).length > 0
-    const variantOptions = hasVariants ? buildVariantOptions(variants) : []
-    const hasEnabledVariants = variantOptions.length > 1 // More than just "Default"
-
-    if (hasEnabledVariants) {
-      // Model has variants - show variant picker
-      const variantContextHash = crypto.randomBytes(8).toString('hex')
-      const variantContext: ModelVariantContext = {
-        dir: context.dir,
-        channelId: context.channelId,
-        sessionId: context.sessionId,
-        isThread: context.isThread,
-        providerId: context.providerId,
-        providerName: context.providerName,
-        modelId: selectedModelId,
-        modelName,
-        thread: context.thread,
-        createdAt: Date.now(),
-      }
-      pendingModelVariantContexts.set(variantContextHash, variantContext)
-
-      const selectMenu = new StringSelectMenuBuilder()
-        .setCustomId(`model_variant:${variantContextHash}`)
-        .setPlaceholder('Select a variant')
-        .addOptions(variantOptions)
-
-      const actionRow =
-        new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
-          selectMenu,
-        )
-
-      await interaction.editReply({
-        content: `**Set Model Preference**\nProvider: **${context.providerName}**\nModel: **${modelName}**\nSelect a variant:`,
-        components: [actionRow],
-      })
-
-      // Clean up model context
-      pendingModelContexts.delete(contextHash)
-      return
-    }
-
-    // No variants - persist model directly and clear any existing variant
+    // Store in appropriate table based on context
     if (context.isThread && context.sessionId) {
-      setSessionModel(context.sessionId, fullModelId)
-      clearSessionVariant(context.sessionId)
-      modelLogger.log(
-        `Set model ${fullModelId} for session ${context.sessionId} (no variants)`,
-      )
+      // Store for session
+      await setSessionModel(context.sessionId, fullModelId)
+      modelLogger.log(`Set model ${fullModelId} for session ${context.sessionId}`)
 
+      // Check if there's a running request and abort+retry with new model
       let retried = false
       if (context.thread) {
         retried = await abortAndRetrySession({
           sessionId: context.sessionId,
           thread: context.thread,
           projectDirectory: context.dir,
-          channelId: context.channelId,
+          appId: context.appId,
         })
       }
 
       if (retried) {
         await interaction.editReply({
-          content: `Model changed for this session:\n**${context.providerName}** / **${modelName}**\n\n\`${fullModelId}\`\n\n_Retrying current request with new model..._`,
+          content: `Model changed for this session:\n**${context.providerName}** / **${selectedModelId}**\n\`${fullModelId}\`\n_Retrying current request with new model..._`,
           components: [],
         })
       } else {
         await interaction.editReply({
-          content: `Model preference set for this session:\n**${context.providerName}** / **${modelName}**\n\n\`${fullModelId}\``,
+          content: `Model preference set for this session:\n**${context.providerName}** / **${selectedModelId}**\n\`${fullModelId}\``,
           components: [],
         })
       }
+
+      // Clean up the context from memory
+      pendingModelContexts.delete(contextHash)
     } else {
-      setChannelModel(context.channelId, fullModelId)
-      clearChannelVariant(context.channelId)
-      modelLogger.log(
-        `Set model ${fullModelId} for channel ${context.channelId} (no variants)`,
-      )
+      // Channel context - show scope selection menu
+      context.selectedModelId = fullModelId
+      pendingModelContexts.set(contextHash, context)
+
+      const scopeOptions = [
+        {
+          label: 'This channel only',
+          value: 'channel',
+          description: 'Override for this channel only',
+        },
+        {
+          label: 'Global default',
+          value: 'global',
+          description: 'Set for this channel and as default for all others',
+        },
+      ]
+
+      const selectMenu = new StringSelectMenuBuilder()
+        .setCustomId(`model_scope:${contextHash}`)
+        .setPlaceholder('Apply to...')
+        .addOptions(scopeOptions)
+
+      const actionRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(selectMenu)
 
       await interaction.editReply({
-        content: `Model preference set for this channel:\n**${context.providerName}** / **${modelName}**\n\n\`${fullModelId}\`\n\nAll new sessions in this channel will use this model.`,
-        components: [],
+        content: `**Set Model Preference**\nModel: **${context.providerName}** / **${selectedModelId}**\n\`${fullModelId}\`\nApply to:`,
+        components: [actionRow],
       })
     }
-
-    pendingModelContexts.delete(contextHash)
   } catch (error) {
     modelLogger.error('Error saving model preference:', error)
     await interaction.editReply({
@@ -624,28 +591,25 @@ export async function handleModelSelectMenu(
 }
 
 /**
- * Handle the model variant select menu interaction.
- * Stores both model and variant preference.
+ * Handle the scope select menu interaction.
+ * Applies the model to either the channel or globally.
  */
-export async function handleModelVariantSelectMenu(
+export async function handleModelScopeSelectMenu(
   interaction: StringSelectMenuInteraction,
 ): Promise<void> {
   const customId = interaction.customId
 
-  if (!customId.startsWith('model_variant:')) {
+  if (!customId.startsWith('model_scope:')) {
     return
   }
 
+  // Defer update immediately
   await interaction.deferUpdate()
 
-  const contextHash = customId.replace('model_variant:', '')
-  const context = pendingModelVariantContexts.get(contextHash)
+  const contextHash = customId.replace('model_scope:', '')
+  const context = pendingModelContexts.get(contextHash)
 
-  // Check if context exists and is not expired
-  if (!context || Date.now() - context.createdAt > PENDING_CONTEXT_TTL_MS) {
-    if (context) {
-      pendingModelVariantContexts.delete(contextHash)
-    }
+  if (!context || !context.providerId || !context.providerName || !context.selectedModelId) {
     await interaction.editReply({
       content: 'Selection expired. Please run /model again.',
       components: [],
@@ -653,74 +617,51 @@ export async function handleModelVariantSelectMenu(
     return
   }
 
-  const selectedVariant = interaction.values[0]
-  if (!selectedVariant) {
+  const selectedScope = interaction.values[0]
+  if (!selectedScope) {
     await interaction.editReply({
-      content: 'No variant selected',
+      content: 'No scope selected',
       components: [],
     })
     return
   }
 
+  const modelId = context.selectedModelId
+  const modelDisplay = modelId.split('/')[1] || modelId
+
   try {
-    const fullModelId = `${context.providerId}/${context.modelId}`
-    const isDefault = selectedVariant === '__default__'
-    const variantDisplay = isDefault ? 'Default' : selectedVariant
-
-    if (context.isThread && context.sessionId) {
-      // Session-level: persist model + variant
-      setSessionModel(context.sessionId, fullModelId)
-      if (isDefault) {
-        clearSessionVariant(context.sessionId)
-      } else {
-        setSessionVariant(context.sessionId, selectedVariant)
-      }
-      modelLogger.log(
-        `Set model ${fullModelId} + variant ${variantDisplay} for session ${context.sessionId}`,
-      )
-
-      let retried = false
-      if (context.thread) {
-        retried = await abortAndRetrySession({
-          sessionId: context.sessionId,
-          thread: context.thread,
-          projectDirectory: context.dir,
-          channelId: context.channelId,
-        })
-      }
-
-      if (retried) {
+    if (selectedScope === 'global') {
+      if (!context.appId) {
         await interaction.editReply({
-          content: `Model changed for this session:\n**${context.providerName}** / **${context.modelName}** / **${variantDisplay}**\n\n\`${fullModelId}\`\n\n_Retrying current request with new model..._`,
+          content: 'Cannot set global model: channel is not linked to a bot',
           components: [],
         })
-      } else {
-        await interaction.editReply({
-          content: `Model preference set for this session:\n**${context.providerName}** / **${context.modelName}** / **${variantDisplay}**\n\n\`${fullModelId}\``,
-          components: [],
-        })
+        return
       }
-    } else {
-      // Channel-level: persist model + variant
-      setChannelModel(context.channelId, fullModelId)
-      if (isDefault) {
-        clearChannelVariant(context.channelId)
-      } else {
-        setChannelVariant(context.channelId, selectedVariant)
-      }
-      modelLogger.log(
-        `Set model ${fullModelId} + variant ${variantDisplay} for channel ${context.channelId}`,
-      )
+      // Set both global default and current channel
+      await setGlobalModel(context.appId, modelId)
+      await setChannelModel(context.channelId, modelId)
+      modelLogger.log(`Set global model ${modelId} for app ${context.appId} and channel ${context.channelId}`)
 
       await interaction.editReply({
-        content: `Model preference set for this channel:\n**${context.providerName}** / **${context.modelName}** / **${variantDisplay}**\n\n\`${fullModelId}\`\n\nAll new sessions in this channel will use this model.`,
+        content: `Model set for this channel and as global default:\n**${context.providerName}** / **${modelDisplay}**\n\`${modelId}\`\nAll channels will use this model (unless they have their own override).`,
+        components: [],
+      })
+    } else {
+      // channel scope
+      await setChannelModel(context.channelId, modelId)
+      modelLogger.log(`Set model ${modelId} for channel ${context.channelId}`)
+
+      await interaction.editReply({
+        content: `Model preference set for this channel:\n**${context.providerName}** / **${modelDisplay}**\n\`${modelId}\`\nAll new sessions in this channel will use this model.`,
         components: [],
       })
     }
 
-    pendingModelVariantContexts.delete(contextHash)
+    // Clean up the context from memory
+    pendingModelContexts.delete(contextHash)
   } catch (error) {
-    modelLogger.error('Error saving model+variant preference:', error)
+    modelLogger.error('Error saving model preference:', error)
     await interaction.editReply({
       content: `Failed to save model preference: ${error instanceof Error ? error.message : 'Unknown error'}`,
       components: [],

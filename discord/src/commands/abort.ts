@@ -2,14 +2,14 @@
 
 import { ChannelType, type ThreadChannel } from 'discord.js'
 import type { CommandContext } from './types.js'
-import { getDatabase } from '../database.js'
+import { getThreadSession } from '../database.js'
 import { initializeOpencodeForDirectory } from '../opencode.js'
 import { resolveTextChannel, getKimakiMetadata, SILENT_MESSAGE_FLAGS } from '../discord-utils.js'
 import { abortControllers } from '../session-handler.js'
-import { createLogger } from '../logger.js'
+import { createLogger, LogPrefix } from '../logger.js'
 import * as errore from 'errore'
 
-const logger = createLogger('ABORT')
+const logger = createLogger(LogPrefix.ABORT)
 
 export async function handleAbortCommand({ command }: CommandContext): Promise<void> {
   const channel = command.channel
@@ -39,7 +39,7 @@ export async function handleAbortCommand({ command }: CommandContext): Promise<v
   }
 
   const textChannel = await resolveTextChannel(channel as ThreadChannel)
-  const { projectDirectory: directory } = getKimakiMetadata(textChannel)
+  const { projectDirectory: directory } = await getKimakiMetadata(textChannel)
 
   if (!directory) {
     await command.reply({
@@ -50,11 +50,9 @@ export async function handleAbortCommand({ command }: CommandContext): Promise<v
     return
   }
 
-  const row = getDatabase()
-    .prepare('SELECT session_id FROM thread_sessions WHERE thread_id = ?')
-    .get(channel.id) as { session_id: string } | undefined
+  const sessionId = await getThreadSession(channel.id)
 
-  if (!row?.session_id) {
+  if (!sessionId) {
     await command.reply({
       content: 'No active session in this thread',
       ephemeral: true,
@@ -63,16 +61,15 @@ export async function handleAbortCommand({ command }: CommandContext): Promise<v
     return
   }
 
-  const sessionId = row.session_id
-
   const existingController = abortControllers.get(sessionId)
   if (existingController) {
+    logger.log(`[ABORT] reason=user-requested sessionId=${sessionId} channelId=${channel.id} - user ran /abort command`)
     existingController.abort(new Error('User requested abort'))
     abortControllers.delete(sessionId)
   }
 
   const getClient = await initializeOpencodeForDirectory(directory)
-  if (errore.isError(getClient)) {
+  if (getClient instanceof Error) {
     await command.reply({
       content: `Failed to abort: ${getClient.message}`,
       ephemeral: true,
@@ -82,6 +79,7 @@ export async function handleAbortCommand({ command }: CommandContext): Promise<v
   }
 
   try {
+    logger.log(`[ABORT-API] reason=user-requested sessionId=${sessionId} channelId=${channel.id} - sending API abort from /abort command`)
     await getClient().session.abort({
       path: { id: sessionId },
     })

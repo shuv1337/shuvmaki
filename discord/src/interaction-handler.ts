@@ -4,6 +4,9 @@
 
 import { Events, type Client, type Interaction } from 'discord.js'
 import { handleSessionCommand, handleSessionAutocomplete } from './commands/session.js'
+import { handleNewWorktreeCommand } from './commands/worktree.js'
+import { handleMergeWorktreeCommand } from './commands/merge-worktree.js'
+import { handleToggleWorktreesCommand } from './commands/worktree-settings.js'
 import { handleResumeCommand, handleResumeAutocomplete } from './commands/resume.js'
 import { handleAddProjectCommand, handleAddProjectAutocomplete } from './commands/add-project.js'
 import {
@@ -13,23 +16,36 @@ import {
 import { handleCreateNewProjectCommand } from './commands/create-new-project.js'
 import { handlePermissionSelectMenu } from './commands/permissions.js'
 import { handleAbortCommand } from './commands/abort.js'
+import { handleCompactCommand } from './commands/compact.js'
 import { handleShareCommand } from './commands/share.js'
 import { handleForkCommand, handleForkSelectMenu } from './commands/fork.js'
 import {
   handleModelCommand,
   handleProviderSelectMenu,
   handleModelSelectMenu,
-  handleModelVariantSelectMenu,
+  handleModelScopeSelectMenu,
 } from './commands/model.js'
+import { handleUnsetModelCommand } from './commands/unset-model.js'
+import {
+  handleLoginCommand,
+  handleLoginProviderSelectMenu,
+  handleLoginMethodSelectMenu,
+  handleApiKeyModalSubmit,
+} from './commands/login.js'
+import {
+  handleGeminiApiKeyButton,
+  handleGeminiApiKeyModalSubmit,
+} from './commands/gemini-apikey.js'
 import { handleAgentCommand, handleAgentSelectMenu, handleQuickAgentCommand } from './commands/agent.js'
-import { handleVariantCommand, handleVariantSelectMenu } from './commands/variant.js'
 import { handleAskQuestionSelectMenu } from './commands/ask-question.js'
 import { handleQueueCommand, handleClearQueueCommand } from './commands/queue.js'
 import { handleUndoCommand, handleRedoCommand } from './commands/undo-redo.js'
 import { handleUserCommand } from './commands/user-command.js'
-import { createLogger } from './logger.js'
+import { handleVerbosityCommand } from './commands/verbosity.js'
+import { handleRestartOpencodeServerCommand } from './commands/restart-opencode-server.js'
+import { createLogger, LogPrefix } from './logger.js'
 
-const interactionLogger = createLogger('INTERACTION')
+const interactionLogger = createLogger(LogPrefix.INTERACTION)
 
 export function registerInteractionHandler({
   discordClient,
@@ -54,7 +70,7 @@ export function registerInteractionHandler({
 
       if (interaction.isAutocomplete()) {
         switch (interaction.commandName) {
-          case 'session':
+          case 'new-session':
             await handleSessionAutocomplete({ interaction, appId })
             return
 
@@ -80,8 +96,20 @@ export function registerInteractionHandler({
         interactionLogger.log(`[COMMAND] Processing: ${interaction.commandName}`)
 
         switch (interaction.commandName) {
-          case 'session':
+          case 'new-session':
             await handleSessionCommand({ command: interaction, appId })
+            return
+
+          case 'new-worktree':
+            await handleNewWorktreeCommand({ command: interaction, appId })
+            return
+
+          case 'merge-worktree':
+            await handleMergeWorktreeCommand({ command: interaction, appId })
+            return
+
+          case 'toggle-worktrees':
+            await handleToggleWorktreesCommand({ command: interaction, appId })
             return
 
           case 'resume':
@@ -105,6 +133,10 @@ export function registerInteractionHandler({
             await handleAbortCommand({ command: interaction, appId })
             return
 
+          case 'compact':
+            await handleCompactCommand({ command: interaction, appId })
+            return
+
           case 'share':
             await handleShareCommand({ command: interaction, appId })
             return
@@ -117,12 +149,16 @@ export function registerInteractionHandler({
             await handleModelCommand({ interaction, appId })
             return
 
-          case 'agent':
-            await handleAgentCommand({ interaction, appId })
+          case 'unset-model-override':
+            await handleUnsetModelCommand({ interaction, appId })
             return
 
-          case 'variant':
-            await handleVariantCommand({ interaction, appId })
+          case 'login':
+            await handleLoginCommand({ interaction, appId })
+            return
+
+          case 'agent':
+            await handleAgentCommand({ interaction, appId })
             return
 
           case 'queue':
@@ -140,6 +176,14 @@ export function registerInteractionHandler({
           case 'redo':
             await handleRedoCommand({ command: interaction, appId })
             return
+
+          case 'verbosity':
+            await handleVerbosityCommand({ command: interaction, appId })
+            return
+
+          case 'restart-opencode-server':
+            await handleRestartOpencodeServerCommand({ command: interaction, appId })
+            return
         }
 
         // Handle quick agent commands (ending with -agent suffix, but not the base /agent command)
@@ -151,6 +195,16 @@ export function registerInteractionHandler({
         // Handle user-defined commands (ending with -cmd suffix)
         if (interaction.commandName.endsWith('-cmd')) {
           await handleUserCommand({ command: interaction, appId })
+          return
+        }
+        return
+      }
+
+      if (interaction.isButton()) {
+        const customId = interaction.customId
+
+        if (customId.startsWith('gemini_apikey:')) {
+          await handleGeminiApiKeyButton(interaction)
           return
         }
         return
@@ -174,10 +228,12 @@ export function registerInteractionHandler({
           return
         }
 
-        if (customId.startsWith('model_variant:')) {
-          await handleModelVariantSelectMenu(interaction)
+        if (customId.startsWith('model_scope:')) {
+          await handleModelScopeSelectMenu(interaction)
           return
         }
+
+
 
         if (customId.startsWith('agent_select:')) {
           await handleAgentSelectMenu(interaction)
@@ -189,13 +245,33 @@ export function registerInteractionHandler({
           return
         }
 
-        if (customId.startsWith('variant_select:')) {
-          await handleVariantSelectMenu(interaction)
+        if (customId.startsWith('permission:')) {
+          await handlePermissionSelectMenu(interaction)
           return
         }
 
-        if (customId.startsWith('permission:')) {
-          await handlePermissionSelectMenu(interaction)
+        if (customId.startsWith('login_provider:')) {
+          await handleLoginProviderSelectMenu(interaction)
+          return
+        }
+
+        if (customId.startsWith('login_method:')) {
+          await handleLoginMethodSelectMenu(interaction)
+          return
+        }
+        return
+      }
+
+      if (interaction.isModalSubmit()) {
+        const customId = interaction.customId
+
+        if (customId.startsWith('login_apikey:')) {
+          await handleApiKeyModalSubmit(interaction)
+          return
+        }
+
+        if (customId.startsWith('gemini_apikey_modal:')) {
+          await handleGeminiApiKeyModalSubmit(interaction)
           return
         }
         return

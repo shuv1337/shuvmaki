@@ -3,14 +3,13 @@
 
 import type { CommandContext, CommandHandler } from './types.js'
 import { ChannelType, type TextChannel, type ThreadChannel } from 'discord.js'
-import { extractTagsArrays } from '../xml.js'
 import { handleOpencodeSession } from '../session-handler.js'
 import { SILENT_MESSAGE_FLAGS } from '../discord-utils.js'
-import { createLogger } from '../logger.js'
-import { getDatabase } from '../database.js'
+import { createLogger, LogPrefix } from '../logger.js'
+import { getChannelDirectory, getThreadSession } from '../database.js'
 import fs from 'node:fs'
 
-const userCommandLogger = createLogger('USER_CMD')
+const userCommandLogger = createLogger(LogPrefix.USER_CMD)
 
 export const handleUserCommand: CommandHandler = async ({ command, appId }: CommandContext) => {
   const discordCommandName = command.commandName
@@ -55,11 +54,9 @@ export const handleUserCommand: CommandHandler = async ({ command, appId }: Comm
     textChannel = thread.parent as TextChannel | null
 
     // Verify this thread has an existing session
-    const row = getDatabase()
-      .prepare('SELECT session_id FROM thread_sessions WHERE thread_id = ?')
-      .get(thread.id) as { session_id: string } | undefined
+    const sessionId = await getThreadSession(thread.id)
 
-    if (!row) {
+    if (!sessionId) {
       await command.reply({
         content:
           'This thread does not have an active session. Use this command in a project channel to create a new thread.',
@@ -68,28 +65,18 @@ export const handleUserCommand: CommandHandler = async ({ command, appId }: Comm
       return
     }
 
-    if (textChannel?.topic) {
-      const extracted = extractTagsArrays({
-        xml: textChannel.topic,
-        tags: ['kimaki.directory', 'kimaki.app'],
-      })
-
-      projectDirectory = extracted['kimaki.directory']?.[0]?.trim()
-      channelAppId = extracted['kimaki.app']?.[0]?.trim()
+    if (textChannel) {
+      const channelConfig = await getChannelDirectory(textChannel.id)
+      projectDirectory = channelConfig?.directory
+      channelAppId = channelConfig?.appId || undefined
     }
   } else {
     // Running in a text channel - will create a new thread
     textChannel = channel as TextChannel
 
-    if (textChannel.topic) {
-      const extracted = extractTagsArrays({
-        xml: textChannel.topic,
-        tags: ['kimaki.directory', 'kimaki.app'],
-      })
-
-      projectDirectory = extracted['kimaki.directory']?.[0]?.trim()
-      channelAppId = extracted['kimaki.app']?.[0]?.trim()
-    }
+    const channelConfig = await getChannelDirectory(textChannel.id)
+    projectDirectory = channelConfig?.directory
+    channelAppId = channelConfig?.appId || undefined
   }
 
   if (channelAppId && channelAppId !== appId) {
@@ -132,6 +119,7 @@ export const handleUserCommand: CommandHandler = async ({ command, appId }: Comm
         projectDirectory,
         channelId: textChannel?.id,
         command: commandPayload,
+        appId,
       })
     } else if (textChannel) {
       // Running in text channel - create a new thread
@@ -147,6 +135,9 @@ export const handleUserCommand: CommandHandler = async ({ command, appId }: Comm
         reason: `OpenCode command: ${commandName}`,
       })
 
+      // Add user to thread so it appears in their sidebar
+      await newThread.members.add(command.user.id)
+
       await command.editReply(`Started /${commandName} in ${newThread.toString()}`)
 
       await handleOpencodeSession({
@@ -155,6 +146,7 @@ export const handleUserCommand: CommandHandler = async ({ command, appId }: Comm
         projectDirectory,
         channelId: textChannel.id,
         command: commandPayload,
+        appId,
       })
     }
   } catch (error) {

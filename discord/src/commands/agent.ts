@@ -11,13 +11,13 @@ import {
   type TextChannel,
 } from 'discord.js'
 import crypto from 'node:crypto'
-import { getDatabase, setChannelAgent, setSessionAgent, clearSessionModel, runModelMigrations } from '../database.js'
+import { setChannelAgent, setSessionAgent, clearSessionModel, getThreadSession } from '../database.js'
 import { initializeOpencodeForDirectory } from '../opencode.js'
 import { resolveTextChannel, getKimakiMetadata } from '../discord-utils.js'
-import { createLogger } from '../logger.js'
+import { createLogger, LogPrefix } from '../logger.js'
 import * as errore from 'errore'
 
-const agentLogger = createLogger('AGENT')
+const agentLogger = createLogger(LogPrefix.AGENT)
 
 const pendingAgentContexts = new Map<
   string,
@@ -79,18 +79,15 @@ export async function resolveAgentCommandContext({
   if (isThread) {
     const thread = channel as ThreadChannel
     const textChannel = await resolveTextChannel(thread)
-    const metadata = getKimakiMetadata(textChannel)
+    const metadata = await getKimakiMetadata(textChannel)
     projectDirectory = metadata.projectDirectory
     channelAppId = metadata.channelAppId
     targetChannelId = textChannel?.id || channel.id
 
-    const row = getDatabase()
-      .prepare('SELECT session_id FROM thread_sessions WHERE thread_id = ?')
-      .get(thread.id) as { session_id: string } | undefined
-    sessionId = row?.session_id
+    sessionId = await getThreadSession(thread.id)
   } else if (channel.type === ChannelType.GuildText) {
     const textChannel = channel as TextChannel
-    const metadata = getKimakiMetadata(textChannel)
+    const metadata = await getKimakiMetadata(textChannel)
     projectDirectory = metadata.projectDirectory
     channelAppId = metadata.channelAppId
     targetChannelId = channel.id
@@ -123,23 +120,23 @@ export async function resolveAgentCommandContext({
 
 /**
  * Set the agent preference for a context (session or channel).
- * When switching agents for a session, also clears the session model preference
- * so the new agent's model takes effect.
+ * When switching agents for a session, clears session model preference
+ * so the new agent's model takes effect (agent model > channel model).
  */
-export function setAgentForContext({
+export async function setAgentForContext({
   context,
   agentName,
 }: {
   context: AgentCommandContext
   agentName: string
-}): void {
+}): Promise<void> {
   if (context.isThread && context.sessionId) {
-    setSessionAgent(context.sessionId, agentName)
+    await setSessionAgent(context.sessionId, agentName)
     // Clear session model so the new agent's model takes effect
-    clearSessionModel(context.sessionId)
-    agentLogger.log(`Set agent ${agentName} for session ${context.sessionId} (cleared model preference)`)
+    await clearSessionModel(context.sessionId)
+    agentLogger.log(`Set agent ${agentName} for session ${context.sessionId} (cleared session model)`)
   } else {
-    setChannelAgent(context.channelId, agentName)
+    await setChannelAgent(context.channelId, agentName)
     agentLogger.log(`Set agent ${agentName} for channel ${context.channelId}`)
   }
 }
@@ -153,8 +150,6 @@ export async function handleAgentCommand({
 }): Promise<void> {
   await interaction.deferReply({ ephemeral: true })
 
-  runModelMigrations()
-
   const context = await resolveAgentCommandContext({ interaction, appId })
   if (!context) {
     return
@@ -162,7 +157,7 @@ export async function handleAgentCommand({
 
   try {
     const getClient = await initializeOpencodeForDirectory(context.dir)
-    if (errore.isError(getClient)) {
+    if (getClient instanceof Error) {
       await interaction.editReply({ content: getClient.message })
       return
     }
@@ -248,7 +243,7 @@ export async function handleAgentSelectMenu(
   }
 
   try {
-    setAgentForContext({ context, agentName: selectedAgent })
+    await setAgentForContext({ context, agentName: selectedAgent })
 
     if (context.isThread && context.sessionId) {
       await interaction.editReply({
@@ -257,7 +252,7 @@ export async function handleAgentSelectMenu(
       })
     } else {
       await interaction.editReply({
-        content: `Agent preference set for this channel: **${selectedAgent}**\n\nAll new sessions in this channel will use this agent.`,
+        content: `Agent preference set for this channel: **${selectedAgent}**\nAll new sessions in this channel will use this agent.`,
         components: [],
       })
     }
@@ -285,8 +280,6 @@ export async function handleQuickAgentCommand({
 }): Promise<void> {
   await command.deferReply({ ephemeral: true })
 
-  runModelMigrations()
-
   // Extract agent name from command: "plan-agent" → "plan"
   const sanitizedAgentName = command.commandName.replace(/-agent$/, '')
 
@@ -297,7 +290,7 @@ export async function handleQuickAgentCommand({
 
   try {
     const getClient = await initializeOpencodeForDirectory(context.dir)
-    if (errore.isError(getClient)) {
+    if (getClient instanceof Error) {
       await command.editReply({ content: getClient.message })
       return
     }
@@ -323,7 +316,7 @@ export async function handleQuickAgentCommand({
       return
     }
 
-    setAgentForContext({ context, agentName: matchingAgent.name })
+    await setAgentForContext({ context, agentName: matchingAgent.name })
 
     if (context.isThread && context.sessionId) {
       await command.editReply({
@@ -331,7 +324,7 @@ export async function handleQuickAgentCommand({
       })
     } else {
       await command.editReply({
-        content: `Switched to **${matchingAgent.name}** agent for this channel\n\nAll new sessions will use this agent.`,
+        content: `Switched to **${matchingAgent.name}** agent for this channel\nAll new sessions will use this agent.`,
       })
     }
   } catch (error) {

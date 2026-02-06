@@ -4,13 +4,16 @@
 
 import { ChannelType, type Message, type TextChannel, type ThreadChannel } from 'discord.js'
 import { Lexer } from 'marked'
-import { extractTagsArrays } from './xml.js'
 import { formatMarkdownTables } from './format-tables.js'
+import { getChannelDirectory } from './database.js'
 import { limitHeadingDepth } from './limit-heading-depth.js'
 import { unnestCodeBlocksFromLists } from './unnest-code-blocks.js'
-import { createLogger } from './logger.js'
+import { createLogger, LogPrefix } from './logger.js'
+import mime from 'mime'
+import fs from 'node:fs'
+import path from 'node:path'
 
-const discordLogger = createLogger('DISCORD')
+const discordLogger = createLogger(LogPrefix.DISCORD)
 
 export const SILENT_MESSAGE_FLAGS = 4 | 4096
 // Same as SILENT but without SuppressNotifications - triggers badge/notification
@@ -57,8 +60,25 @@ export function splitMarkdownForDiscord({
   const tokens = lexer.lex(content)
 
   const lines: LineInfo[] = []
+  const ensureNewlineBeforeCode = (): void => {
+    const last = lines[lines.length - 1]
+    if (!last) {
+      return
+    }
+    if (last.text.endsWith('\n')) {
+      return
+    }
+    lines.push({
+      text: '\n',
+      inCodeBlock: false,
+      lang: '',
+      isOpeningFence: false,
+      isClosingFence: false,
+    })
+  }
   for (const token of tokens) {
     if (token.type === 'code') {
+      ensureNewlineBeforeCode()
       const lang = token.lang || ''
       lines.push({
         text: '```' + lang + '\n',
@@ -129,8 +149,18 @@ export function splitMarkdownForDiscord({
     return pieces
   }
 
+  const closingFence = '```\n'
+
   for (const line of lines) {
-    const wouldExceed = currentChunk.length + line.text.length > maxLength
+    const openingFenceSize =
+      currentChunk.length === 0 && (line.inCodeBlock || line.isOpeningFence)
+        ? ('```' + line.lang + '\n').length
+        : 0
+    const lineLength = line.isOpeningFence ? 0 : line.text.length
+    const activeFenceOverhead =
+      currentLang !== null || openingFenceSize > 0 ? closingFence.length : 0
+    const wouldExceed =
+      currentChunk.length + openingFenceSize + lineLength + activeFenceOverhead > maxLength
 
     if (wouldExceed) {
       // handle case where single line is longer than maxLength
@@ -192,9 +222,34 @@ export function splitMarkdownForDiscord({
         }
       } else {
         // currentChunk is empty but line still exceeds - shouldn't happen after above check
-        currentChunk = line.text
-        if (line.inCodeBlock || line.isOpeningFence) {
-          currentLang = line.lang
+        const openingFence = line.inCodeBlock || line.isOpeningFence
+        const openingFenceSize = openingFence ? ('```' + line.lang + '\n').length : 0
+        if (line.text.length + openingFenceSize + activeFenceOverhead > maxLength) {
+          const fencedOverhead = openingFence
+            ? ('```' + line.lang + '\n').length + closingFence.length
+            : 0
+          const availablePerChunk = Math.max(10, maxLength - fencedOverhead - 50)
+          const pieces = splitLongLine(line.text, availablePerChunk, line.inCodeBlock)
+          for (const piece of pieces) {
+            if (openingFence) {
+              chunks.push('```' + line.lang + '\n' + piece + closingFence)
+            } else {
+              chunks.push(piece)
+            }
+          }
+          currentChunk = ''
+          currentLang = null
+        } else {
+          if (openingFence) {
+            currentChunk = '```' + line.lang + '\n'
+            if (!line.isOpeningFence) {
+              currentChunk += line.text
+            }
+            currentLang = line.lang
+          } else {
+            currentChunk = line.text
+            currentLang = null
+          }
         }
       }
     } else {
@@ -208,6 +263,9 @@ export function splitMarkdownForDiscord({
   }
 
   if (currentChunk) {
+    if (currentLang !== null) {
+      currentChunk += closingFence
+    }
     chunks.push(currentChunk)
   }
 
@@ -284,21 +342,69 @@ export function escapeDiscordFormatting(text: string): string {
   return text.replace(/```/g, '\\`\\`\\`').replace(/````/g, '\\`\\`\\`\\`')
 }
 
-export function getKimakiMetadata(textChannel: TextChannel | null): {
+export async function getKimakiMetadata(textChannel: TextChannel | null): Promise<{
   projectDirectory?: string
   channelAppId?: string
-} {
-  if (!textChannel?.topic) {
+}> {
+  if (!textChannel) {
     return {}
   }
 
-  const extracted = extractTagsArrays({
-    xml: textChannel.topic,
-    tags: ['kimaki.directory', 'kimaki.app'],
+  const channelConfig = await getChannelDirectory(textChannel.id)
+
+  if (!channelConfig) {
+    return {}
+  }
+
+  return {
+    projectDirectory: channelConfig.directory,
+    channelAppId: channelConfig.appId || undefined,
+  }
+}
+
+/**
+ * Upload files to a Discord thread/channel in a single message.
+ * Sending all files in one message causes Discord to display images in a grid layout.
+ */
+export async function uploadFilesToDiscord({
+  threadId,
+  botToken,
+  files,
+}: {
+  threadId: string
+  botToken: string
+  files: string[]
+}): Promise<void> {
+  if (files.length === 0) {
+    return
+  }
+
+  // Build attachments array for all files
+  const attachments = files.map((file, index) => ({
+    id: index,
+    filename: path.basename(file),
+  }))
+
+  const formData = new FormData()
+  formData.append('payload_json', JSON.stringify({ attachments }))
+
+  // Append each file with its array index, with correct MIME type for grid display
+  files.forEach((file, index) => {
+    const buffer = fs.readFileSync(file)
+    const mimeType = mime.getType(file) || 'application/octet-stream'
+    formData.append(`files[${index}]`, new Blob([buffer], { type: mimeType }), path.basename(file))
   })
 
-  const projectDirectory = extracted['kimaki.directory']?.[0]?.trim()
-  const channelAppId = extracted['kimaki.app']?.[0]?.trim()
+  const response = await fetch(`https://discord.com/api/v10/channels/${threadId}/messages`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bot ${botToken}`,
+    },
+    body: formData,
+  })
 
-  return { projectDirectory, channelAppId }
+  if (!response.ok) {
+    const error = await response.text()
+    throw new Error(`Discord API error: ${response.status} - ${error}`)
+  }
 }

@@ -13,13 +13,13 @@ import type { Session } from '@google/genai'
 import { getTools } from './tools.js'
 import { mkdir } from 'node:fs/promises'
 import type { WorkerInMessage, WorkerOutMessage } from './worker-types.js'
-import { createLogger } from './logger.js'
+import { createLogger, LogPrefix } from './logger.js'
 
 if (!parentPort) {
   throw new Error('This module must be run as a worker thread')
 }
 
-const workerLogger = createLogger(`WORKER ${threadId}`)
+const workerLogger = createLogger(`${LogPrefix.WORKER}_${threadId}`)
 workerLogger.log('GenAI worker started')
 
 // Define sendError early so it can be used by global handlers
@@ -132,7 +132,7 @@ async function createAssistantAudioLogStream(
     try: () => mkdir(audioDir, { recursive: true }),
     catch: (e) => e as Error,
   })
-  if (errore.isError(mkdirError)) {
+  if (mkdirError instanceof Error) {
     workerLogger.error(`Failed to create audio log directory:`, mkdirError.message)
     return null
   }

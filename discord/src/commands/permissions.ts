@@ -12,13 +12,15 @@ import crypto from 'node:crypto'
 import type { PermissionRequest } from '@opencode-ai/sdk/v2'
 import { getOpencodeClientV2 } from '../opencode.js'
 import { NOTIFY_MESSAGE_FLAGS } from '../discord-utils.js'
-import { createLogger } from '../logger.js'
+import { createLogger, LogPrefix } from '../logger.js'
 
-const logger = createLogger('PERMISSIONS')
+const logger = createLogger(LogPrefix.PERMISSIONS)
 
 type PendingPermissionContext = {
   permission: PermissionRequest
+  requestIds: string[]
   directory: string
+  permissionDirectory: string
   thread: ThreadChannel
   contextHash: string
 }
@@ -34,16 +36,22 @@ export async function showPermissionDropdown({
   thread,
   permission,
   directory,
+  permissionDirectory,
+  subtaskLabel,
 }: {
   thread: ThreadChannel
   permission: PermissionRequest
   directory: string
+  permissionDirectory: string
+  subtaskLabel?: string
 }): Promise<{ messageId: string; contextHash: string }> {
   const contextHash = crypto.randomBytes(8).toString('hex')
 
   const context: PendingPermissionContext = {
     permission,
+    requestIds: [permission.id],
     directory,
+    permissionDirectory,
     thread,
     contextHash,
   }
@@ -78,9 +86,11 @@ export async function showPermissionDropdown({
 
   const actionRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(selectMenu)
 
+  const subtaskLine = subtaskLabel ? `**From:** \`${subtaskLabel}\`\n` : ''
   const permissionMessage = await thread.send({
     content:
       `⚠️ **Permission Required**\n\n` +
+      subtaskLine +
       `**Type:** \`${permission.permission}\`\n` +
       (patternStr ? `**Pattern:** \`${patternStr}\`` : ''),
     components: [actionRow],
@@ -124,10 +134,16 @@ export async function handlePermissionSelectMenu(
     if (!clientV2) {
       throw new Error('OpenCode server not found for directory')
     }
-    await clientV2.permission.reply({
-      requestID: context.permission.id,
-      reply: response,
-    })
+    const requestIds = context.requestIds.length > 0 ? context.requestIds : [context.permission.id]
+    await Promise.all(
+      requestIds.map((requestId) => {
+        return clientV2.permission.reply({
+          requestID: requestId,
+          directory: context.permissionDirectory,
+          reply: response,
+        })
+      }),
+    )
 
     pendingPermissionContexts.delete(contextHash)
 
@@ -153,7 +169,7 @@ export async function handlePermissionSelectMenu(
       components: [], // Remove the dropdown
     })
 
-    logger.log(`Permission ${context.permission.id} ${response}`)
+    logger.log(`Permission ${context.permission.id} ${response} (${requestIds.length} request(s))`)
   } catch (error) {
     logger.error('Error handling permission:', error)
     await interaction.editReply({
@@ -161,6 +177,25 @@ export async function handlePermissionSelectMenu(
       components: [],
     })
   }
+}
+
+export function addPermissionRequestToContext({
+  contextHash,
+  requestId,
+}: {
+  contextHash: string
+  requestId: string
+}): boolean {
+  const context = pendingPermissionContexts.get(contextHash)
+  if (!context) {
+    return false
+  }
+  if (context.requestIds.includes(requestId)) {
+    return false
+  }
+  context.requestIds = [...context.requestIds, requestId]
+  pendingPermissionContexts.set(contextHash, context)
+  return true
 }
 
 /**

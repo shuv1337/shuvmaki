@@ -1,18 +1,17 @@
-// /session command - Start a new OpenCode session.
+// /new-session command - Start a new OpenCode session.
 
 import { ChannelType, type TextChannel } from 'discord.js'
 import fs from 'node:fs'
 import path from 'node:path'
 import type { CommandContext, AutocompleteContext } from './types.js'
-import { getDatabase } from '../database.js'
+import { getChannelDirectory } from '../database.js'
 import { initializeOpencodeForDirectory } from '../opencode.js'
 import { SILENT_MESSAGE_FLAGS } from '../discord-utils.js'
-import { extractTagsArrays } from '../xml.js'
 import { handleOpencodeSession } from '../session-handler.js'
-import { createLogger } from '../logger.js'
+import { createLogger, LogPrefix } from '../logger.js'
 import * as errore from 'errore'
 
-const logger = createLogger('SESSION')
+const logger = createLogger(LogPrefix.SESSION)
 
 export async function handleSessionCommand({ command, appId }: CommandContext): Promise<void> {
   await command.deferReply({ ephemeral: false })
@@ -29,18 +28,9 @@ export async function handleSessionCommand({ command, appId }: CommandContext): 
 
   const textChannel = channel as TextChannel
 
-  let projectDirectory: string | undefined
-  let channelAppId: string | undefined
-
-  if (textChannel.topic) {
-    const extracted = extractTagsArrays({
-      xml: textChannel.topic,
-      tags: ['kimaki.directory', 'kimaki.app'],
-    })
-
-    projectDirectory = extracted['kimaki.directory']?.[0]?.trim()
-    channelAppId = extracted['kimaki.app']?.[0]?.trim()
-  }
+  const channelConfig = await getChannelDirectory(textChannel.id)
+  const projectDirectory = channelConfig?.directory
+  const channelAppId = channelConfig?.appId || undefined
 
   if (channelAppId && channelAppId !== appId) {
     await command.editReply('This channel is not configured for this bot')
@@ -59,7 +49,7 @@ export async function handleSessionCommand({ command, appId }: CommandContext): 
 
   try {
     const getClient = await initializeOpencodeForDirectory(projectDirectory)
-    if (errore.isError(getClient)) {
+    if (getClient instanceof Error) {
       await command.editReply(getClient.message)
       return
     }
@@ -75,7 +65,7 @@ export async function handleSessionCommand({ command, appId }: CommandContext): 
     }
 
     const starterMessage = await textChannel.send({
-      content: `🚀 **Starting OpenCode session**\n📝 ${prompt.slice(0, 200)}${prompt.length > 200 ? '…' : ''}${files.length > 0 ? `\n📎 Files: ${files.join(', ')}` : ''}`,
+      content: `🚀 **Starting OpenCode session**\n📝 ${prompt}${files.length > 0 ? `\n📎 Files: ${files.join(', ')}` : ''}`,
       flags: SILENT_MESSAGE_FLAGS,
     })
 
@@ -85,6 +75,9 @@ export async function handleSessionCommand({ command, appId }: CommandContext): 
       reason: 'OpenCode session',
     })
 
+    // Add user to thread so it appears in their sidebar
+    await thread.members.add(command.user.id)
+
     await command.editReply(`Created new session in ${thread.toString()}`)
 
     await handleOpencodeSession({
@@ -93,6 +86,7 @@ export async function handleSessionCommand({ command, appId }: CommandContext): 
       projectDirectory,
       channelId: textChannel.id,
       agent,
+      appId,
     })
   } catch (error) {
     logger.error('[SESSION] Error:', error)
@@ -107,22 +101,14 @@ async function handleAgentAutocomplete({ interaction, appId }: AutocompleteConte
 
   let projectDirectory: string | undefined
 
-  if (interaction.channel) {
-    const channel = interaction.channel
-    if (channel.type === ChannelType.GuildText) {
-      const textChannel = channel as TextChannel
-      if (textChannel.topic) {
-        const extracted = extractTagsArrays({
-          xml: textChannel.topic,
-          tags: ['kimaki.directory', 'kimaki.app'],
-        })
-        const channelAppId = extracted['kimaki.app']?.[0]?.trim()
-        if (channelAppId && channelAppId !== appId) {
-          await interaction.respond([])
-          return
-        }
-        projectDirectory = extracted['kimaki.directory']?.[0]?.trim()
+  if (interaction.channel && interaction.channel.type === ChannelType.GuildText) {
+    const channelConfig = await getChannelDirectory(interaction.channel.id)
+    if (channelConfig) {
+      if (channelConfig.appId && channelConfig.appId !== appId) {
+        await interaction.respond([])
+        return
       }
+      projectDirectory = channelConfig.directory
     }
   }
 
@@ -133,7 +119,7 @@ async function handleAgentAutocomplete({ interaction, appId }: AutocompleteConte
 
   try {
     const getClient = await initializeOpencodeForDirectory(projectDirectory)
-    if (errore.isError(getClient)) {
+    if (getClient instanceof Error) {
       await interaction.respond([])
       return
     }
@@ -148,7 +134,10 @@ async function handleAgentAutocomplete({ interaction, appId }: AutocompleteConte
     }
 
     const agents = agentsResponse.data
-      .filter((a) => a.mode === 'primary' || a.mode === 'all')
+      .filter((a) => {
+        const hidden = (a as { hidden?: boolean }).hidden
+        return (a.mode === 'primary' || a.mode === 'all') && !hidden
+      })
       .filter((a) => a.name.toLowerCase().includes(focusedValue.toLowerCase()))
       .slice(0, 25)
 
@@ -190,22 +179,14 @@ export async function handleSessionAutocomplete({
 
   let projectDirectory: string | undefined
 
-  if (interaction.channel) {
-    const channel = interaction.channel
-    if (channel.type === ChannelType.GuildText) {
-      const textChannel = channel as TextChannel
-      if (textChannel.topic) {
-        const extracted = extractTagsArrays({
-          xml: textChannel.topic,
-          tags: ['kimaki.directory', 'kimaki.app'],
-        })
-        const channelAppId = extracted['kimaki.app']?.[0]?.trim()
-        if (channelAppId && channelAppId !== appId) {
-          await interaction.respond([])
-          return
-        }
-        projectDirectory = extracted['kimaki.directory']?.[0]?.trim()
+  if (interaction.channel && interaction.channel.type === ChannelType.GuildText) {
+    const channelConfig = await getChannelDirectory(interaction.channel.id)
+    if (channelConfig) {
+      if (channelConfig.appId && channelConfig.appId !== appId) {
+        await interaction.respond([])
+        return
       }
+      projectDirectory = channelConfig.directory
     }
   }
 
@@ -216,7 +197,7 @@ export async function handleSessionAutocomplete({
 
   try {
     const getClient = await initializeOpencodeForDirectory(projectDirectory)
-    if (errore.isError(getClient)) {
+    if (getClient instanceof Error) {
       await interaction.respond([])
       return
     }

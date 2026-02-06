@@ -1,5 +1,157 @@
 # Changelog
 
+## 0.4.55
+
+### Patch Changes
+
+- feat: migrate database to **Prisma** for type-safe queries and better schema management
+- fix: restore **idempotent schema** initialization to ensure database consistency on startup
+- refactor: add **foreign key relations** to database schema
+
+## 0.4.54
+
+### Patch Changes
+
+- feat: add **--domain** flag to tunnel command (defaults to `kimaki.xyz`)
+- update **traforo** dependency with parametrizable base domain support
+
+## 0.4.53
+
+### Patch Changes
+
+- feat: add **/login** command to authenticate with AI providers
+- feat: show **current model info** in `/model` command response
+- feat: show **task agent** name in Discord status/messages
+- feat: add **worktree toggle** instead of enable/disable commands
+- fix: **filter bash tools** by side effects to prevent accidental execution
+- refactor: switch to **@xmorse/cac** for CLI parsing and add **npx kimaki tunnel** command
+- refactor: consolidate resume commands to **/resume**
+
+## 0.4.52
+
+### Patch Changes
+
+- feat: include **Discord CDN URLs** for image attachments in prompts so agents can fetch images if needed
+- feat: always pass **explicit model** to OpenCode like TUI does for consistent behavior
+- fix: check **config.model** before recent models for default model selection
+- fix: add **suggestion to use CLI** for unlisted projects in add-project command
+- update **errore** submodule
+
+## 0.4.51
+
+### Patch Changes
+
+- feat: add **no-kimaki role** to block users from bot access even with owner/admin permissions (thanks @TotalLag for the suggestion)
+- feat: disable **voice channels by default**, add `--enable-voice-channels` flag to opt-in
+
+## 0.4.50
+
+### Patch Changes
+
+- feat: add **text-and-essential-tools** verbosity level - shows text + edits + custom MCP tools, hides read/search/navigation
+- fix: **image handling** - send images as base64 data URLs with resizing, don't embed in prompt text
+- fix: add **HEIC support** for image attachments
+
+## 0.4.49
+
+### Patch Changes
+
+- fix **bracketed paste mode** causing setup to loop on macOS iTerm2 (thanks @ariane-emory for reporting)
+
+## 0.4.48
+
+### Patch Changes
+
+- feat: add **discord username prefix** to AI prompts and ignore non-bot mentions
+- feat: make **verbosity apply mid-session** and add `--verbosity` default flag
+- fix: **gate session idle completion** to prevent premature session ends
+- fix: **show apply_patch file names** from input instead of output
+- fix: **filter hidden agents** from new-session autocomplete
+- fix: **handle permission requests** from subtask sessions
+- fix: log ignored errors and gate idle abort
+- refactor: simplify waitForServer to check single health endpoint
+- refactor: createNewProject extraction
+- update **@clack/prompts** to latest
+
+## 0.4.47
+
+### Patch Changes
+
+- add **/compact** command to trigger session context compaction
+- add **caffeinate** spawn on macOS to prevent system sleep during sessions
+- add **rate limit status** display in Discord when OpenCode is retrying
+- add **apply_patch tool** display like edit with square icon and file summary
+- add **uncommitted changes transfer** to worktree when using /new-worktree in threads
+- fix **subtask separator** - use ⋅ and fix double spaces in tool output
+- fix **stale session.idle events** ignored before content received
+- fix **apply_patch tool** summaries defensive handling
+- fix **abort reason** - pass Error to .abort() to prevent string leaking
+- fix **whitespace normalization** in tool call arguments for Discord display
+- fix **question tool answer** - send user message instead of 'cancelled'
+- fix **blank lines** removed from command response messages
+- refactor **log prefixes** shortened to max 8 chars with LogPrefix enum and picocolors
+
+## 0.4.46
+
+### Patch Changes
+
+- fix **subtask output** hidden in text-only verbosity mode (thanks @xHeaven for reporting)
+- fix **add users to threads** so they appear in sidebar
+- fix **serialize discord event handlers** to prevent race conditions
+
+## 0.4.45
+
+### Patch Changes
+
+- add **/verbosity** command for text-only mode toggle
+- add **/new-worktree** support for existing threads
+- fix **queued messages** sent after session completion
+- fix **add-project --guild** flag for large Discord IDs
+- fix **dedupe permission dropdowns** to prevent duplicate prompts
+- fix **markdown chunk splitting** to prevent exceeding Discord limit
+- refactor session event flow to use **errore** typed errors
+- refactor **channel config** from XML topic to SQLite storage
+
+## 0.4.44
+
+### Patch Changes
+
+- fix **send auto-start race condition** - use embed marker instead of database lookup
+- add **/merge-worktree** command to merge worktree branch into main with ⬦ thread prefix
+- add **/toggle-worktrees** command for channel settings
+- add **--use-worktrees** flag for automatic worktree creation on new sessions
+- add **add-project** CLI command with worktree submodule/deps init
+- fix **merge-worktree** non-fast-forward handling, uncommitted changes check, detached HEAD support
+
+## 0.4.43
+
+### Patch Changes
+
+- feat: handle **2000 char limit** in send command with automatic splitting
+- fix: track **multiple pending permissions** per thread to prevent duplicates and hangs
+- update **errore** to 0.9.0 (breaking: `_` → `Error` in matchError)
+
+## 0.4.42
+
+### Patch Changes
+
+- fix **npx kimaki@latest** failing - update errore to 0.8.0 with fixed npm exports
+- add **quick start mode** - skip OpenCode init when setup already done for faster bot startup
+- refactor CLI into smaller helper functions for better maintainability
+
+## 0.4.40
+
+### Patch Changes
+
+- add **/new-worktree** command to create git worktrees from Discord
+- rename `/session` → **/new-session** for clarity
+- fix **SSE deadlock** by increasing connection pool size
+- fix **worktree thread creation** - check if worktree exists before creating thread
+- fix **worktree message editing** - edit starter message when ready instead of sending new one
+- send **multiple images in single message** for grid display
+- migrate to **createTaggedError** factory for typed error handling
+- update **errore** submodule to 0.7.1
+
 ## 0.4.39
 
 ### Patch Changes

@@ -8,21 +8,31 @@ import {
 } from 'discord.js'
 import fs from 'node:fs'
 import type { CommandContext, AutocompleteContext } from './types.js'
-import { getDatabase } from '../database.js'
+import { getChannelDirectory, setThreadSession, setPartMessagesBatch, getAllThreadSessionIds } from '../database.js'
 import { initializeOpencodeForDirectory } from '../opencode.js'
-import { sendThreadMessage, resolveTextChannel, getKimakiMetadata } from '../discord-utils.js'
-import { extractTagsArrays } from '../xml.js'
+import { sendThreadMessage, resolveTextChannel } from '../discord-utils.js'
 import { collectLastAssistantParts } from '../message-formatting.js'
-import { createLogger } from '../logger.js'
+import { createLogger, LogPrefix } from '../logger.js'
 import * as errore from 'errore'
 
-const logger = createLogger('RESUME')
+const logger = createLogger(LogPrefix.RESUME)
 
 export async function handleResumeCommand({ command, appId }: CommandContext): Promise<void> {
   await command.deferReply({ ephemeral: false })
 
   const sessionId = command.options.getString('session', true)
   const channel = command.channel
+
+  const isThread =
+    channel &&
+    [ChannelType.PublicThread, ChannelType.PrivateThread, ChannelType.AnnouncementThread].includes(
+      channel.type,
+    )
+
+  if (isThread) {
+    await command.editReply('This command can only be used in project channels, not threads')
+    return
+  }
 
   if (!channel || channel.type !== ChannelType.GuildText) {
     await command.editReply('This command can only be used in text channels')
@@ -31,18 +41,9 @@ export async function handleResumeCommand({ command, appId }: CommandContext): P
 
   const textChannel = channel as TextChannel
 
-  let projectDirectory: string | undefined
-  let channelAppId: string | undefined
-
-  if (textChannel.topic) {
-    const extracted = extractTagsArrays({
-      xml: textChannel.topic,
-      tags: ['kimaki.directory', 'kimaki.app'],
-    })
-
-    projectDirectory = extracted['kimaki.directory']?.[0]?.trim()
-    channelAppId = extracted['kimaki.app']?.[0]?.trim()
-  }
+  const channelConfig = await getChannelDirectory(textChannel.id)
+  const projectDirectory = channelConfig?.directory
+  const channelAppId = channelConfig?.appId || undefined
 
   if (channelAppId && channelAppId !== appId) {
     await command.editReply('This channel is not configured for this bot')
@@ -61,7 +62,7 @@ export async function handleResumeCommand({ command, appId }: CommandContext): P
 
   try {
     const getClient = await initializeOpencodeForDirectory(projectDirectory)
-    if (errore.isError(getClient)) {
+    if (getClient instanceof Error) {
       await command.editReply(getClient.message)
       return
     }
@@ -83,9 +84,10 @@ export async function handleResumeCommand({ command, appId }: CommandContext): P
       reason: `Resuming session ${sessionId}`,
     })
 
-    getDatabase()
-      .prepare('INSERT OR REPLACE INTO thread_sessions (thread_id, session_id) VALUES (?, ?)')
-      .run(thread.id, sessionId)
+    // Add user to thread so it appears in their sidebar
+    await thread.members.add(command.user.id)
+
+    await setThreadSession(thread.id, sessionId)
 
     logger.log(`[RESUME] Created thread ${thread.id} for session ${sessionId}`)
 
@@ -117,17 +119,14 @@ export async function handleResumeCommand({ command, appId }: CommandContext): P
     if (content.trim()) {
       const discordMessage = await sendThreadMessage(thread, content)
 
-      const stmt = getDatabase().prepare(
-        'INSERT OR REPLACE INTO part_messages (part_id, message_id, thread_id) VALUES (?, ?, ?)',
+      // Store part-message mappings atomically
+      await setPartMessagesBatch(
+        partIds.map((partId) => ({
+          partId,
+          messageId: discordMessage.id,
+          threadId: thread.id,
+        })),
       )
-
-      const transaction = getDatabase().transaction((ids: string[]) => {
-        for (const partId of ids) {
-          stmt.run(partId, discordMessage.id, thread.id)
-        }
-      })
-
-      transaction(partIds)
     }
 
     const messageCount = messages.length
@@ -157,12 +156,12 @@ export async function handleResumeAutocomplete({
       interaction.channel as TextChannel | ThreadChannel | null,
     )
     if (textChannel) {
-      const { projectDirectory: directory, channelAppId } = getKimakiMetadata(textChannel)
-      if (channelAppId && channelAppId !== appId) {
+      const channelConfig = await getChannelDirectory(textChannel.id)
+      if (channelConfig?.appId && channelConfig.appId !== appId) {
         await interaction.respond([])
         return
       }
-      projectDirectory = directory
+      projectDirectory = channelConfig?.directory
     }
   }
 
@@ -173,7 +172,7 @@ export async function handleResumeAutocomplete({
 
   try {
     const getClient = await initializeOpencodeForDirectory(projectDirectory)
-    if (errore.isError(getClient)) {
+    if (getClient instanceof Error) {
       await interaction.respond([])
       return
     }
@@ -184,13 +183,7 @@ export async function handleResumeAutocomplete({
       return
     }
 
-    const existingSessionIds = new Set(
-      (
-        getDatabase().prepare('SELECT session_id FROM thread_sessions').all() as {
-          session_id: string
-        }[]
-      ).map((row) => row.session_id),
-    )
+    const existingSessionIds = new Set(await getAllThreadSessionIds())
 
     const sessions = sessionsResponse.data
       .filter((session) => !existingSessionIds.has(session.id))

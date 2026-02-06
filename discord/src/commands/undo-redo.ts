@@ -2,13 +2,13 @@
 
 import { ChannelType, type ThreadChannel } from 'discord.js'
 import type { CommandContext } from './types.js'
-import { getDatabase } from '../database.js'
+import { getThreadSession } from '../database.js'
 import { initializeOpencodeForDirectory } from '../opencode.js'
 import { resolveTextChannel, getKimakiMetadata, SILENT_MESSAGE_FLAGS } from '../discord-utils.js'
-import { createLogger } from '../logger.js'
+import { createLogger, LogPrefix } from '../logger.js'
 import * as errore from 'errore'
 
-const logger = createLogger('UNDO-REDO')
+const logger = createLogger(LogPrefix.UNDO_REDO)
 
 export async function handleUndoCommand({ command }: CommandContext): Promise<void> {
   const channel = command.channel
@@ -38,7 +38,7 @@ export async function handleUndoCommand({ command }: CommandContext): Promise<vo
   }
 
   const textChannel = await resolveTextChannel(channel as ThreadChannel)
-  const { projectDirectory: directory } = getKimakiMetadata(textChannel)
+  const { projectDirectory: directory } = await getKimakiMetadata(textChannel)
 
   if (!directory) {
     await command.reply({
@@ -49,11 +49,9 @@ export async function handleUndoCommand({ command }: CommandContext): Promise<vo
     return
   }
 
-  const row = getDatabase()
-    .prepare('SELECT session_id FROM thread_sessions WHERE thread_id = ?')
-    .get(channel.id) as { session_id: string } | undefined
+  const sessionId = await getThreadSession(channel.id)
 
-  if (!row?.session_id) {
+  if (!sessionId) {
     await command.reply({
       content: 'No active session in this thread',
       ephemeral: true,
@@ -62,12 +60,10 @@ export async function handleUndoCommand({ command }: CommandContext): Promise<vo
     return
   }
 
-  const sessionId = row.session_id
-
   await command.deferReply({ flags: SILENT_MESSAGE_FLAGS })
 
   const getClient = await initializeOpencodeForDirectory(directory)
-  if (errore.isError(getClient)) {
+  if (getClient instanceof Error) {
     await command.editReply(`Failed to undo: ${getClient.message}`)
     return
   }
@@ -145,7 +141,7 @@ export async function handleRedoCommand({ command }: CommandContext): Promise<vo
   }
 
   const textChannel = await resolveTextChannel(channel as ThreadChannel)
-  const { projectDirectory: directory } = getKimakiMetadata(textChannel)
+  const { projectDirectory: directory } = await getKimakiMetadata(textChannel)
 
   if (!directory) {
     await command.reply({
@@ -156,11 +152,9 @@ export async function handleRedoCommand({ command }: CommandContext): Promise<vo
     return
   }
 
-  const row = getDatabase()
-    .prepare('SELECT session_id FROM thread_sessions WHERE thread_id = ?')
-    .get(channel.id) as { session_id: string } | undefined
+  const sessionId = await getThreadSession(channel.id)
 
-  if (!row?.session_id) {
+  if (!sessionId) {
     await command.reply({
       content: 'No active session in this thread',
       ephemeral: true,
@@ -169,12 +163,10 @@ export async function handleRedoCommand({ command }: CommandContext): Promise<vo
     return
   }
 
-  const sessionId = row.session_id
-
   await command.deferReply({ flags: SILENT_MESSAGE_FLAGS })
 
   const getClient = await initializeOpencodeForDirectory(directory)
-  if (errore.isError(getClient)) {
+  if (getClient instanceof Error) {
     await command.editReply(`Failed to redo: ${getClient.message}`)
     return
   }

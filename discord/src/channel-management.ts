@@ -4,8 +4,7 @@
 
 import { ChannelType, type CategoryChannel, type Guild, type TextChannel } from 'discord.js'
 import path from 'node:path'
-import { getDatabase } from './database.js'
-import { extractTagsArrays } from './xml.js'
+import { getChannelDirectory, setChannelDirectory } from './database.js'
 
 export async function ensureKimakiCategory(
   guild: Guild,
@@ -64,12 +63,14 @@ export async function createProjectChannels({
   projectDirectory,
   appId,
   botName,
+  enableVoiceChannels = false,
 }: {
   guild: Guild
   projectDirectory: string
   appId: string
   botName?: string
-}): Promise<{ textChannelId: string; voiceChannelId: string; channelName: string }> {
+  enableVoiceChannels?: boolean
+}): Promise<{ textChannelId: string; voiceChannelId: string | null; channelName: string }> {
   const baseName = path.basename(projectDirectory)
   const channelName = `${baseName}`
     .toLowerCase()
@@ -77,36 +78,45 @@ export async function createProjectChannels({
     .slice(0, 100)
 
   const kimakiCategory = await ensureKimakiCategory(guild, botName)
-  const kimakiAudioCategory = await ensureKimakiAudioCategory(guild, botName)
 
   const textChannel = await guild.channels.create({
     name: channelName,
     type: ChannelType.GuildText,
     parent: kimakiCategory,
-    topic: `<kimaki><directory>${projectDirectory}</directory><app>${appId}</app></kimaki>`,
+    // Channel configuration is stored in SQLite, not in the topic
   })
 
-  const voiceChannel = await guild.channels.create({
-    name: channelName,
-    type: ChannelType.GuildVoice,
-    parent: kimakiAudioCategory,
+  await setChannelDirectory({
+    channelId: textChannel.id,
+    directory: projectDirectory,
+    channelType: 'text',
+    appId,
   })
 
-  getDatabase()
-    .prepare(
-      'INSERT OR REPLACE INTO channel_directories (channel_id, directory, channel_type, app_id) VALUES (?, ?, ?, ?)',
-    )
-    .run(textChannel.id, projectDirectory, 'text', appId)
+  let voiceChannelId: string | null = null
 
-  getDatabase()
-    .prepare(
-      'INSERT OR REPLACE INTO channel_directories (channel_id, directory, channel_type, app_id) VALUES (?, ?, ?, ?)',
-    )
-    .run(voiceChannel.id, projectDirectory, 'voice', appId)
+  if (enableVoiceChannels) {
+    const kimakiAudioCategory = await ensureKimakiAudioCategory(guild, botName)
+
+    const voiceChannel = await guild.channels.create({
+      name: channelName,
+      type: ChannelType.GuildVoice,
+      parent: kimakiAudioCategory,
+    })
+
+    await setChannelDirectory({
+      channelId: voiceChannel.id,
+      directory: projectDirectory,
+      channelType: 'voice',
+      appId,
+    })
+
+    voiceChannelId = voiceChannel.id
+  }
 
   return {
     textChannelId: textChannel.id,
-    voiceChannelId: voiceChannel.id,
+    voiceChannelId,
     channelName,
   }
 }
@@ -122,33 +132,23 @@ export type ChannelWithTags = {
 export async function getChannelsWithDescriptions(guild: Guild): Promise<ChannelWithTags[]> {
   const channels: ChannelWithTags[] = []
 
-  guild.channels.cache
-    .filter((channel) => channel.isTextBased())
-    .forEach((channel) => {
-      const textChannel = channel as TextChannel
-      const description = textChannel.topic || null
+  const textChannels = guild.channels.cache.filter((channel) => channel.isTextBased())
 
-      let kimakiDirectory: string | undefined
-      let kimakiApp: string | undefined
+  for (const channel of textChannels.values()) {
+    const textChannel = channel as TextChannel
+    const description = textChannel.topic || null
 
-      if (description) {
-        const extracted = extractTagsArrays({
-          xml: description,
-          tags: ['kimaki.directory', 'kimaki.app'],
-        })
+    // Get channel config from database instead of parsing XML from topic
+    const channelConfig = await getChannelDirectory(textChannel.id)
 
-        kimakiDirectory = extracted['kimaki.directory']?.[0]?.trim()
-        kimakiApp = extracted['kimaki.app']?.[0]?.trim()
-      }
-
-      channels.push({
-        id: textChannel.id,
-        name: textChannel.name,
-        description,
-        kimakiDirectory,
-        kimakiApp,
-      })
+    channels.push({
+      id: textChannel.id,
+      name: textChannel.name,
+      description,
+      kimakiDirectory: channelConfig?.directory,
+      kimakiApp: channelConfig?.appId || undefined,
     })
+  }
 
   return channels
 }

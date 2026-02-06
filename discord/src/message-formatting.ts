@@ -5,11 +5,15 @@
 import type { Part } from '@opencode-ai/sdk/v2'
 import type { FilePartInput } from '@opencode-ai/sdk'
 import type { Message } from 'discord.js'
-import fs from 'node:fs'
-import path from 'node:path'
+
+// Extended FilePartInput with original Discord URL for reference in prompts
+export type DiscordFileAttachment = FilePartInput & {
+  sourceUrl?: string
+}
 import * as errore from 'errore'
-import { createLogger } from './logger.js'
+import { createLogger, LogPrefix } from './logger.js'
 import { FetchError } from './errors.js'
+import { processImage } from './image-utils.js'
 
 // Generic message type compatible with both v1 and v2 SDK
 type GenericSessionMessage = {
@@ -17,9 +21,7 @@ type GenericSessionMessage = {
   parts: Part[]
 }
 
-const ATTACHMENTS_DIR = path.join(process.cwd(), 'tmp', 'discord-attachments')
-
-const logger = createLogger('FORMATTING')
+const logger = createLogger(LogPrefix.FORMATTING)
 
 /**
  * Escapes Discord inline markdown characters so dynamic content
@@ -27,6 +29,81 @@ const logger = createLogger('FORMATTING')
  */
 function escapeInlineMarkdown(text: string): string {
   return text.replace(/([*_~|`\\])/g, '\\$1')
+}
+
+/**
+ * Parses a patchText string (apply_patch format) and counts additions/deletions per file.
+ * Patch format uses `*** Add File:`, `*** Update File:`, `*** Delete File:` headers,
+ * with diff lines prefixed by `+` (addition) or `-` (deletion) inside `@@` hunks.
+ */
+function parsePatchCounts(
+  patchText: string,
+): Map<string, { additions: number; deletions: number }> {
+  const counts = new Map<string, { additions: number; deletions: number }>()
+  const lines = patchText.split('\n')
+  let currentFile = ''
+  let currentType = ''
+  let inHunk = false
+
+  for (const line of lines) {
+    const addMatch = line.match(/^\*\*\* Add File:\s*(.+)/)
+    const updateMatch = line.match(/^\*\*\* Update File:\s*(.+)/)
+    const deleteMatch = line.match(/^\*\*\* Delete File:\s*(.+)/)
+
+    if (addMatch || updateMatch || deleteMatch) {
+      const match = addMatch || updateMatch || deleteMatch
+      currentFile = (match?.[1] ?? '').trim()
+      currentType = addMatch ? 'add' : updateMatch ? 'update' : 'delete'
+      counts.set(currentFile, { additions: 0, deletions: 0 })
+      inHunk = false
+      continue
+    }
+
+    if (line.startsWith('@@')) {
+      inHunk = true
+      continue
+    }
+
+    if (line.startsWith('*** ')) {
+      inHunk = false
+      continue
+    }
+
+    if (!currentFile) {
+      continue
+    }
+
+    const entry = counts.get(currentFile)
+    if (!entry) {
+      continue
+    }
+
+    if (currentType === 'add') {
+      // all content lines in Add File are additions
+      if (line.length > 0 && !line.startsWith('*** ')) {
+        entry.additions++
+      }
+    } else if (currentType === 'delete') {
+      // all content lines in Delete File are deletions
+      if (line.length > 0 && !line.startsWith('*** ')) {
+        entry.deletions++
+      }
+    } else if (inHunk) {
+      if (line.startsWith('+')) {
+        entry.additions++
+      } else if (line.startsWith('-')) {
+        entry.deletions++
+      }
+    }
+  }
+  return counts
+}
+
+/**
+ * Normalize whitespace: convert newlines to spaces and collapse consecutive spaces.
+ */
+function normalizeWhitespace(text: string): string {
+  return text.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ')
 }
 
 /**
@@ -93,7 +170,7 @@ export async function getTextAttachments(message: Message): Promise<string> {
         try: () => fetch(attachment.url),
         catch: (e) => new FetchError({ url: attachment.url, cause: e }),
       })
-      if (errore.isError(response)) {
+      if (response instanceof Error) {
         return `<attachment filename="${attachment.name}" error="${response.message}" />`
       }
       if (!response.ok) {
@@ -107,7 +184,7 @@ export async function getTextAttachments(message: Message): Promise<string> {
   return textContents.join('\n\n')
 }
 
-export async function getFileAttachments(message: Message): Promise<FilePartInput[]> {
+export async function getFileAttachments(message: Message): Promise<DiscordFileAttachment[]> {
   const fileAttachments = Array.from(message.attachments.values()).filter((attachment) => {
     const contentType = attachment.contentType || ''
     return contentType.startsWith('image/') || contentType === 'application/pdf'
@@ -117,18 +194,13 @@ export async function getFileAttachments(message: Message): Promise<FilePartInpu
     return []
   }
 
-  // ensure tmp directory exists
-  if (!fs.existsSync(ATTACHMENTS_DIR)) {
-    fs.mkdirSync(ATTACHMENTS_DIR, { recursive: true })
-  }
-
   const results = await Promise.all(
     fileAttachments.map(async (attachment) => {
       const response = await errore.tryAsync({
         try: () => fetch(attachment.url),
         catch: (e) => new FetchError({ url: attachment.url, cause: e }),
       })
-      if (errore.isError(response)) {
+      if (response instanceof Error) {
         logger.error(`Error downloading attachment ${attachment.name}:`, response.message)
         return null
       }
@@ -137,22 +209,28 @@ export async function getFileAttachments(message: Message): Promise<FilePartInpu
         return null
       }
 
-      const buffer = Buffer.from(await response.arrayBuffer())
-      const localPath = path.join(ATTACHMENTS_DIR, `${message.id}-${attachment.name}`)
-      fs.writeFileSync(localPath, buffer)
+      const rawBuffer = Buffer.from(await response.arrayBuffer())
+      const originalMime = attachment.contentType || 'application/octet-stream'
 
-      logger.log(`Downloaded attachment to ${localPath}`)
+      // Process image (resize if needed, convert to JPEG)
+      const { buffer, mime } = await processImage(rawBuffer, originalMime)
+
+      const base64 = buffer.toString('base64')
+      const dataUrl = `data:${mime};base64,${base64}`
+
+      logger.log(`Attachment ${attachment.name}: ${rawBuffer.length} → ${buffer.length} bytes, ${mime}`)
 
       return {
         type: 'file' as const,
-        mime: attachment.contentType || 'application/octet-stream',
+        mime,
         filename: attachment.name,
-        url: localPath,
+        url: dataUrl,
+        sourceUrl: attachment.url,
       }
     }),
   )
 
-  return results.filter((r) => r !== null) as FilePartInput[]
+  return results.filter((r) => r !== null) as DiscordFileAttachment[]
 }
 
 export function getToolSummaryText(part: Part): string {
@@ -168,6 +246,23 @@ export function getToolSummaryText(part: Part): string {
     return fileName
       ? `*${escapeInlineMarkdown(fileName)}* (+${added}-${removed})`
       : `(+${added}-${removed})`
+  }
+
+  if (part.tool === 'apply_patch') {
+    // Only inputs are available when parts are sent during streaming (output/metadata not yet populated)
+    const patchText = (part.state.input?.patchText as string) || ''
+    if (!patchText) {
+      return ''
+    }
+    const patchCounts = parsePatchCounts(patchText)
+    return [...patchCounts.entries()]
+      .map(([filePath, { additions, deletions }]) => {
+        const fileName = filePath.split('/').pop() || ''
+        return fileName
+          ? `*${escapeInlineMarkdown(fileName)}* (+${additions}-${deletions})`
+          : `(+${additions}-${deletions})`
+      })
+      .join(', ')
   }
 
   if (part.tool === 'write') {
@@ -212,7 +307,7 @@ export function getToolSummaryText(part: Part): string {
     return ''
   }
 
-  // Task tool display is handled via subtask part in session-handler (shows label like explore-1)
+  // Task tool display is handled via subtask part in session-handler (shows name + agent)
   if (part.tool === 'task') {
     return ''
   }
@@ -228,7 +323,8 @@ export function getToolSummaryText(part: Part): string {
     .map(([key, value]) => {
       if (value === null || value === undefined) return null
       const stringValue = typeof value === 'string' ? value : JSON.stringify(value)
-      const truncatedValue = stringValue.length > 50 ? stringValue.slice(0, 50) + '…' : stringValue
+      const normalized = normalizeWhitespace(stringValue)
+      const truncatedValue = normalized.length > 50 ? normalized.slice(0, 50) + '…' : normalized
       return `${key}: ${truncatedValue}`
     })
     .filter(Boolean)
@@ -259,7 +355,7 @@ export function formatTodoList(part: Part): string {
 }
 
 export function formatPart(part: Part, prefix?: string): string {
-  const pfx = prefix ? `${prefix}: ` : ''
+  const pfx = prefix ? `${prefix} ⋅ ` : ''
 
   if (part.type === 'text') {
     if (!part.text?.trim()) return ''
@@ -343,12 +439,13 @@ export function formatPart(part: Part, prefix?: string): string {
       if (part.state.status === 'error') {
         return '⨯'
       }
-      if (part.tool === 'edit' || part.tool === 'write') {
+      if (part.tool === 'edit' || part.tool === 'write' || part.tool === 'apply_patch') {
         return '◼︎'
       }
       return '┣'
     })()
-    return `${icon} ${pfx}${part.tool} ${toolTitle} ${summaryText}`.trim()
+    const toolParts = [part.tool, toolTitle, summaryText].filter(Boolean).join(' ')
+    return `${icon} ${pfx}${toolParts}`
   }
 
   logger.warn('Unknown part type:', part)

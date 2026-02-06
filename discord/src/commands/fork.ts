@@ -9,15 +9,15 @@ import {
   ThreadAutoArchiveDuration,
   type ThreadChannel,
 } from 'discord.js'
-import { getDatabase } from '../database.js'
+import { getThreadSession, setThreadSession, setPartMessagesBatch } from '../database.js'
 import { initializeOpencodeForDirectory } from '../opencode.js'
 import { resolveTextChannel, getKimakiMetadata, sendThreadMessage } from '../discord-utils.js'
 import { collectLastAssistantParts } from '../message-formatting.js'
-import { createLogger } from '../logger.js'
+import { createLogger, LogPrefix } from '../logger.js'
 import * as errore from 'errore'
 
-const sessionLogger = createLogger('SESSION')
-const forkLogger = createLogger('FORK')
+const sessionLogger = createLogger(LogPrefix.SESSION)
+const forkLogger = createLogger(LogPrefix.FORK)
 
 export async function handleForkCommand(interaction: ChatInputCommandInteraction): Promise<void> {
   const channel = interaction.channel
@@ -45,7 +45,7 @@ export async function handleForkCommand(interaction: ChatInputCommandInteraction
   }
 
   const textChannel = await resolveTextChannel(channel as ThreadChannel)
-  const { projectDirectory: directory } = getKimakiMetadata(textChannel)
+  const { projectDirectory: directory } = await getKimakiMetadata(textChannel)
 
   if (!directory) {
     await interaction.reply({
@@ -55,11 +55,9 @@ export async function handleForkCommand(interaction: ChatInputCommandInteraction
     return
   }
 
-  const row = getDatabase()
-    .prepare('SELECT session_id FROM thread_sessions WHERE thread_id = ?')
-    .get(channel.id) as { session_id: string } | undefined
+  const sessionId = await getThreadSession(channel.id)
 
-  if (!row?.session_id) {
+  if (!sessionId) {
     await interaction.reply({
       content: 'No active session in this thread',
       ephemeral: true,
@@ -70,10 +68,8 @@ export async function handleForkCommand(interaction: ChatInputCommandInteraction
   // Defer reply before API calls to avoid 3-second timeout
   await interaction.deferReply({ ephemeral: true })
 
-  const sessionId = row.session_id
-
   const getClient = await initializeOpencodeForDirectory(directory)
-  if (errore.isError(getClient)) {
+  if (getClient instanceof Error) {
     await interaction.editReply({
       content: `Failed to load messages: ${getClient.message}`,
     })
@@ -171,7 +167,7 @@ export async function handleForkSelectMenu(
   await interaction.deferReply({ ephemeral: false })
 
   const getClient = await initializeOpencodeForDirectory(directory)
-  if (errore.isError(getClient)) {
+  if (getClient instanceof Error) {
     await interaction.editReply(`Failed to fork session: ${getClient.message}`)
     return
   }
@@ -215,9 +211,10 @@ export async function handleForkSelectMenu(
       reason: `Forked from session ${sessionId}`,
     })
 
-    getDatabase()
-      .prepare('INSERT OR REPLACE INTO thread_sessions (thread_id, session_id) VALUES (?, ?)')
-      .run(thread.id, forkedSession.id)
+    // Add user to thread so it appears in their sidebar
+    await thread.members.add(interaction.user.id)
+
+    await setThreadSession(thread.id, forkedSession.id)
 
     sessionLogger.log(`Created forked session ${forkedSession.id} in thread ${thread.id}`)
 
@@ -239,16 +236,14 @@ export async function handleForkSelectMenu(
       if (content.trim()) {
         const discordMessage = await sendThreadMessage(thread, content)
 
-        // Store part-message mappings for future reference
-        const stmt = getDatabase().prepare(
-          'INSERT OR REPLACE INTO part_messages (part_id, message_id, thread_id) VALUES (?, ?, ?)',
+        // Store part-message mappings atomically
+        await setPartMessagesBatch(
+          partIds.map((partId) => ({
+            partId,
+            messageId: discordMessage.id,
+            threadId: thread.id,
+          })),
         )
-        const transaction = getDatabase().transaction((ids: string[]) => {
-          for (const partId of ids) {
-            stmt.run(partId, discordMessage.id, thread.id)
-          }
-        })
-        transaction(partIds)
       }
     }
 

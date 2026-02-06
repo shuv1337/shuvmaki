@@ -21,6 +21,9 @@ import dedent from 'string-dedent'
 import {
   PermissionsBitField,
   Events,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
   type Client,
   type Message,
   type ThreadChannel,
@@ -28,7 +31,11 @@ import {
   type VoiceState,
 } from 'discord.js'
 import { createGenAIWorker, type GenAIWorker } from './genai-worker-wrapper.js'
-import { getDatabase } from './database.js'
+import {
+  getVoiceChannelDirectory,
+  getGeminiApiKey,
+  findTextChannelByVoiceChannel,
+} from './database.js'
 import {
   sendThreadMessage,
   escapeDiscordFormatting,
@@ -37,9 +44,9 @@ import {
 import { transcribeAudio } from './voice.js'
 import { FetchError } from './errors.js'
 
-import { createLogger } from './logger.js'
+import { createLogger, LogPrefix } from './logger.js'
 
-const voiceLogger = createLogger('VOICE')
+const voiceLogger = createLogger(LogPrefix.VOICE)
 
 export type VoiceConnectionData = {
   connection: VoiceConnection
@@ -152,16 +159,13 @@ export async function setupVoiceHandling({
 }) {
   voiceLogger.log(`Setting up voice handling for guild ${guildId}, channel ${channelId}`)
 
-  const channelDirRow = getDatabase()
-    .prepare('SELECT directory FROM channel_directories WHERE channel_id = ? AND channel_type = ?')
-    .get(channelId, 'voice') as { directory: string } | undefined
+  const directory = await getVoiceChannelDirectory(channelId)
 
-  if (!channelDirRow) {
+  if (!directory) {
     voiceLogger.log(`Voice channel ${channelId} has no associated directory, skipping setup`)
     return
   }
 
-  const directory = channelDirRow.directory
   voiceLogger.log(`Found directory for voice channel: ${directory}`)
 
   const voiceData = voiceConnections.get(guildId)
@@ -172,16 +176,14 @@ export async function setupVoiceHandling({
 
   voiceData.userAudioStream = await createUserAudioLogStream(guildId, channelId)
 
-  const apiKeys = getDatabase()
-    .prepare('SELECT gemini_api_key FROM bot_api_keys WHERE app_id = ?')
-    .get(appId) as { gemini_api_key: string | null } | undefined
+  const geminiApiKey = await getGeminiApiKey(appId)
 
   const genAiWorker = await createGenAIWorker({
     directory,
     guildId,
     channelId,
     appId,
-    geminiApiKey: apiKeys?.gemini_api_key,
+    geminiApiKey,
     systemMessage: dedent`
     You are Kimaki, an AI similar to Jarvis: you help your user (an engineer) controlling his coding agent, just like Jarvis controls Ironman armor and machines. Speak fast.
 
@@ -251,17 +253,11 @@ export async function setupVoiceHandling({
     },
     async onError(error) {
       voiceLogger.error('GenAI worker error:', error)
-      const textChannelRow = getDatabase()
-        .prepare(
-          `SELECT cd2.channel_id FROM channel_directories cd1
-           JOIN channel_directories cd2 ON cd1.directory = cd2.directory
-           WHERE cd1.channel_id = ? AND cd1.channel_type = 'voice' AND cd2.channel_type = 'text'`,
-        )
-        .get(channelId) as { channel_id: string } | undefined
+      const textChannelId = await findTextChannelByVoiceChannel(channelId)
 
-      if (textChannelRow) {
+      if (textChannelId) {
         try {
-          const textChannel = await discordClient.channels.fetch(textChannelRow.channel_id)
+          const textChannel = await discordClient.channels.fetch(textChannelId)
           if (textChannel?.isTextBased() && 'send' in textChannel) {
             await textChannel.send({
               content: `⚠️ Voice session error: ${error}`,
@@ -450,7 +446,7 @@ export async function processVoiceAttachment({
     try: () => fetch(audioAttachment.url),
     catch: (e) => new FetchError({ url: audioAttachment.url, cause: e }),
   })
-  if (errore.isError(audioResponse)) {
+  if (audioResponse instanceof Error) {
     voiceLogger.error(`Failed to download audio attachment:`, audioResponse.message)
     await sendThreadMessage(thread, `⚠️ Failed to download audio: ${audioResponse.message}`)
     return null
@@ -480,25 +476,45 @@ export async function processVoiceAttachment({
 
   let geminiApiKey: string | undefined
   if (appId) {
-    const apiKeys = getDatabase()
-      .prepare('SELECT gemini_api_key FROM bot_api_keys WHERE app_id = ?')
-      .get(appId) as { gemini_api_key: string | null } | undefined
-
-    if (apiKeys?.gemini_api_key) {
-      geminiApiKey = apiKeys.gemini_api_key
+    const apiKey = await getGeminiApiKey(appId)
+    if (apiKey) {
+      geminiApiKey = apiKey
     }
+  }
+
+  if (!geminiApiKey && !process.env.GEMINI_API_KEY) {
+    if (appId) {
+      const button = new ButtonBuilder()
+        .setCustomId(`gemini_apikey:${appId}`)
+        .setLabel('Set Gemini API Key')
+        .setStyle(ButtonStyle.Primary)
+
+      const row = new ActionRowBuilder<ButtonBuilder>().addComponents(button)
+
+      await thread.send({
+        content:
+          'Voice transcription requires a Gemini API key. Get one at https://aistudio.google.com/apikey. The key will be stored and used for future voice messages.',
+        components: [row],
+        flags: SILENT_MESSAGE_FLAGS,
+      })
+    } else {
+      await sendThreadMessage(
+        thread,
+        'Voice transcription requires a Gemini API key. Get one at https://aistudio.google.com/apikey and set it with /login in this channel.',
+      )
+    }
+    return null
   }
 
   const transcription = await transcribeAudio({
     audio: audioBuffer,
     prompt: transcriptionPrompt,
     geminiApiKey,
-    directory: projectDirectory,
     currentSessionContext,
     lastSessionContext,
   })
 
-  if (errore.isError(transcription)) {
+  if (transcription instanceof Error) {
     const errMsg = errore.matchError(transcription, {
       ApiKeyMissingError: (e) => e.message,
       InvalidAudioFormatError: (e) => e.message,
@@ -506,6 +522,7 @@ export async function processVoiceAttachment({
       EmptyTranscriptionError: (e) => e.message,
       NoResponseContentError: (e) => e.message,
       NoToolResponseError: (e) => e.message,
+      Error: (e) => e.message,
     })
     voiceLogger.error(`Transcription failed:`, transcription)
     await sendThreadMessage(thread, `⚠️ Transcription failed: ${errMsg}`)
@@ -532,7 +549,7 @@ export async function processVoiceAttachment({
       ])
       if (renamed === null) {
         voiceLogger.log(`Thread name update timed out`)
-      } else if (errore.isError(renamed)) {
+      } else if (renamed instanceof Error) {
         voiceLogger.log(`Could not update thread name:`, renamed.message)
       } else {
         voiceLogger.log(`Updated thread name to: "${threadName}"`)

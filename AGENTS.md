@@ -1,5 +1,6 @@
 <!-- This AGENTS.md file is generated. Look for an agents.md package.json script to see what files to update instead. -->
 
+
 # restarting the discord bot
 
 ONLY restart the discord bot if the user explicitly asks for it.
@@ -14,6 +15,28 @@ The bot will wait 1000ms and then restart itself with the same arguments.
 ## sqlite
 
 this project uses sqlite to preserve state between runs. the database should never have breaking changes, new kimaki versions should keep working with old sqlite databases created by an older kimaki version. if this happens specifically ask the user how to proceed, asking if it is ok adding migration in startup so users with existing db can still use kimaki and will not break.
+
+we use prisma to write type safe queries. after adding new tables you should also run the command `pnpm generate` inside discord to generate again the prisma code.
+
+you should prefer never deleting or adding new fields. we rely in a schema.sql generated inside src to initialize an update the database schema for users.
+
+if we added new fields on the schema then we would also need to update db.ts with manual sql migration code to keep existing users databases working.
+
+## errore
+
+errore is a submodule. should always be in main. make sure it is never in detached state.
+
+it is a package for using errors as values in ts.
+
+## opencode
+
+if I ask you questions about opencode you can opensrc it from anomalyco/opencode
+
+## discord messages
+ 
+try to not use emojis in messages
+
+when creating system messages like replies to commands never add new line spaces between paragraphs or lines. put one line next to the one before.
 
 # core guidelines
 
@@ -50,6 +73,7 @@ you can open files when i ask me "open in zed the line where ..." using the comm
 # typescript
 
 - ALWAYS use normal imports instead of dynamic imports, unless there is an issue with es module only packages and you are in a commonjs package (this is rare).
+- when throwing errors always use clause instead of error inside message: `new Error("wrapping error", { cause: e })` instead of `new Error(\`wrapping error ${e}\`)`
 
 - use a single object argument instead of multiple positional args: use object arguments for new typescript functions if the function would accept more than one argument, so it is more readable, ({a,b,c}) instead of (a,b,c). this way you can use the object as a sort of named argument feature, where order of arguments does not matter and it's easier to discover parameters.
 
@@ -147,6 +171,8 @@ remember to always add the explicit type to avoid unexpected type inference.
 
 DO `import fs from 'fs'; fs.writeFileSync(...)`
 DO NOT `import { writeFileSync } from 'fs';`
+
+- NEVER pass a string to abortController.abort(). instead if you want to pass a reason always pass an Error instance. like `controller.abort(new Error('reason'))`. This way catch blocks receive an Error instance and not something else.
 
 # package manager: pnpm with workspace
 

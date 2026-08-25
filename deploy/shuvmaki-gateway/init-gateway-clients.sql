@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS gateway_clients (
   secret TEXT NOT NULL,
   guild_id TEXT NOT NULL,
   reachable_url TEXT,
+  discord_user_id TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),
   PRIMARY KEY (client_id, guild_id)

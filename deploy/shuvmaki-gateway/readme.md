@@ -48,7 +48,7 @@ Copy these four values into `.env`. Do not invent them and do not commit them.
 | Bot token | Bot → Token | `DISCORD_BOT_TOKEN` (proxy `TOKEN`) |
 | OAuth client id | OAuth2 → Client ID | `DISCORD_CLIENT_ID` |
 | OAuth client secret | OAuth2 → Client Secret | `DISCORD_CLIENT_SECRET` |
-| Application id | General Information → Application ID | `DISCORD_APPLICATION_ID` and CLI `KIMAKI_GATEWAY_APP_ID` |
+| Application id | General Information → Application ID | Compose `.env` `DISCORD_APPLICATION_ID` (not read by services). CLI `KIMAKI_GATEWAY_APP_ID` — `export KIMAKI_GATEWAY_APP_ID=$DISCORD_APPLICATION_ID` |
 
 On a Discord application, **OAuth2 Client ID and Application ID are the same
 string**. Public Key is **not** required (no HTTP Interactions endpoint).
@@ -78,6 +78,8 @@ OAuth scopes requested at install time (not a portal redirect setting):
 `17927465446480` (same list as `website/src/auth.ts` / `generateBotInstallUrl`).
 
 `prompt=consent` is always sent so Discord includes `guild_id` on the callback.
+Install credentials stay on the onboarding server (random `state` id + HttpOnly
+cookie). `clientSecret` is not put on the Discord authorize URL.
 
 ## Proxy intents (32511 + Message Content)
 
@@ -112,7 +114,9 @@ export KIMAKI_GATEWAY_APP_ID=<Kyle's Application ID>
 
 See `cli.env.example`. Do not hardcode secrets. When `KIMAKI_WEBSITE_URL` is
 not `https://kimaki.dev`, the CLI **does not** default `KIMAKI_GATEWAY_APP_ID`
-to the kimaki.dev bot `1477605701202481173` — that variable is required.
+to the kimaki.dev bot `1477605701202481173` and **does not** default
+`KIMAKI_GATEWAY_PROXY_URL` to `wss://discord-gateway.kimaki.dev` — both
+variables are required.
 
 Then:
 
@@ -135,11 +139,18 @@ cp env.example .env
 docker compose up --build
 ```
 
-First proxy image build compiles the Rust submodule (nightly, `TARGET_CPU=x86-64`).
-Put TLS in front with `caddyfile.example` (or exe.dev HTTPS):
+`POSTGRES_PASSWORD` must be set (URL-safe; `openssl rand -hex 32`). Compose
+fails closed if it is empty. Do not use `change-me`.
 
-- `kimaki.exe.xyz` → onboarding `:8080`
-- `discord-gateway.kimaki.exe.xyz` → gateway-proxy `:7878` (WebSocket + REST)
+First proxy image build compiles the Rust submodule (nightly, `TARGET_CPU=x86-64`).
+Onboarding (`8080`) and gateway-proxy (`7878`) bind **loopback only**. Put TLS
+in front with host Caddy using `caddyfile.example` (or exe.dev HTTPS):
+
+- `kimaki.exe.xyz` → `127.0.0.1:8080`
+- `discord-gateway.kimaki.exe.xyz` → `127.0.0.1:7878` (WebSocket + REST)
+
+Do not publish those ports on `0.0.0.0`. The Caddyfile uses loopback addresses,
+not Docker DNS names, because Caddy runs on the host.
 
 To mount a config file instead of the compose `CONFIG` env, copy
 `config.example.json` to `config.json` (gitignored), leave `token` omitted, set
@@ -165,5 +176,6 @@ above and use the same Postgres `gateway_clients` table.
 
 ## AUTH_SECRET
 
-Not a Discord value. HMAC key for OAuth `state`. Generate with
-`openssl rand -hex 32`.
+Not a Discord value. HMAC key for the OAuth session cookie. Generate with
+`openssl rand -hex 32`. OAuth `state` is a random id; credentials stay in
+server memory until the callback.

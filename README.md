@@ -124,7 +124,7 @@ shuvmaki checks Discord permissions before processing any message. Users need **
 
 The "shuvmaki" role is the recommended approach for team access. Messages from users without any of these are ignored.
 
-- **Blocking access**: create a role named **"no-kimaki"** (case-insensitive) to block specific users, even server owners.
+- **Blocking access**: create a role named **"no-shuvmaki"** or **"no-kimaki"** (case-insensitive) to block specific users, even server owners. Both names work.
 - **Multi-agent orchestration**: other Discord bots are ignored by default. Assign the "shuvmaki" role to another bot to let it trigger shuvmaki sessions.
 
 ## Best Practices

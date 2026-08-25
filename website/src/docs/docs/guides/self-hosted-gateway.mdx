@@ -58,8 +58,9 @@ export KIMAKI_GATEWAY_PROXY_URL=wss://discord-gateway.kimaki.exe.xyz
 export KIMAKI_GATEWAY_APP_ID=<your Discord Application ID>
 ```
 
-`KIMAKI_GATEWAY_APP_ID` is **required** when the website URL is not
-`https://kimaki.dev`. The CLI will not fall back to the kimaki.dev bot id.
+`KIMAKI_GATEWAY_APP_ID` and `KIMAKI_GATEWAY_PROXY_URL` are **required** when
+the website URL is not `https://kimaki.dev`. The CLI will not fall back to the
+kimaki.dev bot id or `wss://discord-gateway.kimaki.dev`.
 
 Then run `kimaki --gateway`. The CLI still generates `clientId`/`clientSecret`,
 opens `/discord-install`, polls `/api/onboarding/status`, and IDENTIFYs to the

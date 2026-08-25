@@ -19,10 +19,11 @@ import {
   generateBotInstallUrl,
   generateDiscordInstallUrlForBot,
   DEFAULT_KIMAKI_GATEWAY_PROXY_URL,
-  DEFAULT_KIMAKI_WEBSITE_URL,
   KIMAKI_GATEWAY_APP_ID,
   KIMAKI_WEBSITE_URL,
   MISSING_KIMAKI_GATEWAY_APP_ID_MESSAGE,
+  MISSING_KIMAKI_GATEWAY_PROXY_URL_MESSAGE,
+  isMissingSelfHostedGatewayProxyUrl,
   abbreviatePath,
 } from './utils.js'
 import {
@@ -89,8 +90,8 @@ export const cliLogger = createLogger(LogPrefix.CLI)
 // We derive REST base from this URL by swapping ws/wss to http/https.
 // Defaults still point at kimaki.dev. Override with KIMAKI_* env to use a
 // self-hosted stack (see deploy/shuvmaki-gateway/). When KIMAKI_WEBSITE_URL is
-// customized, KIMAKI_GATEWAY_APP_ID is required and does not fall back to the
-// kimaki.dev bot.
+// customized, KIMAKI_GATEWAY_APP_ID and KIMAKI_GATEWAY_PROXY_URL are required
+// and do not fall back to the kimaki.dev bot or proxy.
 export const KIMAKI_GATEWAY_PROXY_URL =
   process.env.KIMAKI_GATEWAY_PROXY_URL || DEFAULT_KIMAKI_GATEWAY_PROXY_URL
 
@@ -146,6 +147,27 @@ export function stripBracketedPaste(value: string | undefined): string {
 }
 
 
+// For gateway-shaped env tokens (clientId:secret), appIdFromToken returns
+// undefined. Subcommands like `kimaki project add` then need
+// KIMAKI_GATEWAY_APP_ID unless --app-id was passed.
+export function resolveAppIdFromEnvToken({
+  envToken,
+  appIdOverride,
+  gatewayAppId,
+}: {
+  envToken: string
+  appIdOverride?: string
+  gatewayAppId: string
+}): string | undefined {
+  if (appIdOverride) {
+    return appIdOverride
+  }
+  if (envToken.includes(':') && gatewayAppId) {
+    return gatewayAppId
+  }
+  return appIdFromToken(envToken)
+}
+
 // Derive the Discord Application ID from a bot token.
 // Discord bot tokens have the format: base64(userId).timestamp.hmac
 // The first segment is the bot's user ID (= Application ID) base64-encoded.
@@ -180,7 +202,8 @@ export function appIdFromToken(token: string): string | undefined {
 // Priority: KIMAKI_BOT_TOKEN env var takes precedence over saved DB
 // credentials. This lets CI and cross-instance commands override the
 // local bot identity. If the env token looks like a gateway credential
-// (clientId:clientSecret), the gateway proxy REST URL is set automatically.
+// (clientId:clientSecret), the gateway proxy REST URL is set automatically
+// and appId falls back to KIMAKI_GATEWAY_APP_ID.
 export async function resolveBotCredentials({ appIdOverride }: { appIdOverride?: string } = {}): Promise<{
   token: string
   appId: string | undefined
@@ -192,7 +215,11 @@ export async function resolveBotCredentials({ appIdOverride }: { appIdOverride?:
       // Gateway tokens need REST calls routed through the proxy, not discord.com
       store.setState({ discordBaseUrl: KIMAKI_GATEWAY_PROXY_REST_BASE_URL })
     }
-    const appId = appIdOverride || appIdFromToken(envToken)
+    const appId = resolveAppIdFromEnvToken({
+      envToken,
+      appIdOverride,
+      gatewayAppId: KIMAKI_GATEWAY_APP_ID,
+    })
     return { token: envToken, appId }
   }
 
@@ -712,6 +739,15 @@ export async function resolveGatewayInstallCredentials(): Promise<
 > {
   if (!KIMAKI_GATEWAY_APP_ID) {
     return new Error(MISSING_KIMAKI_GATEWAY_APP_ID_MESSAGE)
+  }
+
+  if (
+    isMissingSelfHostedGatewayProxyUrl({
+      websiteUrl: process.env.KIMAKI_WEBSITE_URL,
+      gatewayProxyUrl: process.env.KIMAKI_GATEWAY_PROXY_URL,
+    })
+  ) {
+    return new Error(MISSING_KIMAKI_GATEWAY_PROXY_URL_MESSAGE)
   }
 
   const db = await getDb()
@@ -1359,14 +1395,13 @@ export async function resolveCredentials({
     }
 
     if (
-      process.env.KIMAKI_WEBSITE_URL &&
-      process.env.KIMAKI_WEBSITE_URL.replace(/\/+$/, '') !==
-        DEFAULT_KIMAKI_WEBSITE_URL &&
-      !process.env.KIMAKI_GATEWAY_PROXY_URL
+      isMissingSelfHostedGatewayProxyUrl({
+        websiteUrl: process.env.KIMAKI_WEBSITE_URL,
+        gatewayProxyUrl: process.env.KIMAKI_GATEWAY_PROXY_URL,
+      })
     ) {
-      cliLogger.warn(
-        `KIMAKI_WEBSITE_URL is customized but KIMAKI_GATEWAY_PROXY_URL still defaults to ${DEFAULT_KIMAKI_GATEWAY_PROXY_URL}. Set KIMAKI_GATEWAY_PROXY_URL to your proxy (for example wss://discord-gateway.kimaki.exe.xyz).`,
-      )
+      cliLogger.error(MISSING_KIMAKI_GATEWAY_PROXY_URL_MESSAGE)
+      process.exit(EXIT_NO_RESTART)
     }
 
     const gatewayCredentials = await resolveGatewayInstallCredentials()

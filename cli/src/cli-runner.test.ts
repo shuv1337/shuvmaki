@@ -3,8 +3,13 @@ import { REST } from 'discord.js'
 import {
   getOpenUrlCommand,
   isTransientNetworkError,
+  resolveAppIdFromEnvToken,
   resolveDiscordUserOption,
 } from './cli-runner.js'
+import {
+  isMissingSelfHostedGatewayProxyUrl,
+  resolveKimakiGatewayAppId,
+} from './utils.js'
 
 test('raw Discord user ID does not invent a username', async () => {
   const user = await resolveDiscordUserOption({
@@ -125,5 +130,75 @@ describe('isTransientNetworkError', () => {
       const error = Object.assign(new Error(name), { name, code })
       expect(isTransientNetworkError(error)).toBe(true)
     }
+  })
+})
+
+describe('resolveAppIdFromEnvToken', () => {
+  test('prefers an explicit --app-id override', () => {
+    expect(
+      resolveAppIdFromEnvToken({
+        envToken: 'client-id:client-secret',
+        appIdOverride: '111',
+        gatewayAppId: '222',
+      }),
+    ).toBe('111')
+  })
+
+  test('uses KIMAKI_GATEWAY_APP_ID for gateway-shaped env tokens', () => {
+    expect(
+      resolveAppIdFromEnvToken({
+        envToken: 'client-id:client-secret',
+        gatewayAppId: '1541729625711968396',
+      }),
+    ).toBe('1541729625711968396')
+  })
+
+  test('does not invent an app id when the gateway env is empty', () => {
+    expect(
+      resolveAppIdFromEnvToken({
+        envToken: 'client-id:client-secret',
+        gatewayAppId: '',
+      }),
+    ).toBeUndefined()
+  })
+})
+
+describe('isMissingSelfHostedGatewayProxyUrl', () => {
+  test('fails closed when website URL is customized and proxy URL is unset', () => {
+    expect(
+      isMissingSelfHostedGatewayProxyUrl({
+        websiteUrl: 'https://kimaki.exe.xyz',
+        gatewayProxyUrl: undefined,
+      }),
+    ).toBe(true)
+  })
+
+  test('allows the hosted kimaki.dev website without a proxy override', () => {
+    expect(
+      isMissingSelfHostedGatewayProxyUrl({
+        websiteUrl: undefined,
+        gatewayProxyUrl: undefined,
+      }),
+    ).toBe(false)
+  })
+
+  test('allows a customized website when the proxy URL is set', () => {
+    expect(
+      isMissingSelfHostedGatewayProxyUrl({
+        websiteUrl: 'https://kimaki.exe.xyz',
+        gatewayProxyUrl: 'wss://discord-gateway.kimaki.exe.xyz',
+      }),
+    ).toBe(false)
+  })
+})
+
+describe('resolveKimakiGatewayAppId', () => {
+  test('does not fall back to the hosted bot when website URL is customized', () => {
+    expect(
+      resolveKimakiGatewayAppId({
+        gatewayAppId: undefined,
+        websiteUrl: 'https://kimaki.exe.xyz',
+      }),
+    ).toBe('')
   })
 })

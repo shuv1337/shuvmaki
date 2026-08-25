@@ -261,8 +261,9 @@ const DEFAULT_CHANNEL_TOPIC =
   'General channel for misc tasks with shuvmaki. Not connected to a specific OpenCode project or repository.'
 
 /**
- * Create (or find) the default "kimaki" channel for general-purpose tasks.
- * Channel name is "kimaki-{botName}" for self-hosted bots, "kimaki" for gateway.
+ * Create (or find) the default project channel for general-purpose tasks.
+ * Channel name is "shuvmaki-{botName}" for self-hosted bots and "shuvmaki" for
+ * gateway so this fork does not collide with the live kimaki hosted bot.
  * Directory is ~/.kimaki/projects/kimaki, git-initialized with a .gitignore.
  *
  * Idempotency: checks the database for an existing channel mapped to the
@@ -383,11 +384,12 @@ export async function createDefaultKimakiChannel({
     fs.writeFileSync(gitignorePath, DEFAULT_GITIGNORE)
   }
 
-  // Channel name: "shuvmaki-{botName}" for self-hosted, "kimaki" for gateway
-  // so this fork does not collide with the live kimaki hosted bot.
+  // Channel name: "shuvmaki-{botName}" for self-hosted, "shuvmaki" for gateway.
+  // existingByName still treats "kimaki" as the same default so an existing
+  // hosted-bot channel is reused instead of creating a second one.
   const channelName = (() => {
     if (isGatewayMode) {
-      return 'kimaki'
+      return 'shuvmaki'
     }
     if (!botName) {
       return 'shuvmaki'

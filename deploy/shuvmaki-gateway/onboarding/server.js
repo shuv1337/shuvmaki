@@ -6,11 +6,14 @@
 // implements only the CLI contract used by `kimaki --gateway`:
 //
 // 1. GET /discord-install?clientId=&clientSecret=[&kimakiCallbackUrl][&reachableUrl]
-//    Redirects to Discord OAuth (bot + applications.commands, prompt=consent,
-//    permissions 17927465446480 from website/src/auth.ts).
+//    Stores credentials server-side, sets an HttpOnly cookie, and redirects to
+//    Discord OAuth with a random state id only (bot + applications.commands +
+//    identify, prompt=consent, permissions 17927465446480 from website/src/auth.ts).
+//    clientSecret never appears on the Discord authorize URL.
 // 2. GET /api/auth/callback/discord
 //    Same path as better-auth so the Discord Developer Portal redirect URI
-//    stays /api/auth/callback/discord. Exchanges code, upserts gateway_clients.
+//    stays /api/auth/callback/discord. Cookie must match state. Exchanges code,
+//    fetches Discord user id, upserts gateway_clients.
 // 3. GET /api/onboarding/status?client_id=&secret=
 //    200 { guild_id, discord_user_id? } or 404 { error, onboarding_error? }.
 // 4. GET /install-success  GET /health
@@ -28,10 +31,13 @@ import pg from 'pg'
 const DISCORD_BOT_PERMISSIONS = '17927465446480'
 const DISCORD_AUTHORIZE_URL = 'https://discord.com/api/oauth2/authorize'
 const DISCORD_TOKEN_URL = 'https://discord.com/api/oauth2/token'
+const DISCORD_USERS_ME_URL = 'https://discord.com/api/v10/users/@me'
 const STATE_TTL_MS = 10 * 60 * 1000
 const ONBOARDING_ERROR_TTL_MS = 10 * 60 * 1000
+const OAUTH_COOKIE_NAME = 'shuvmaki_oauth'
 
 const onboardingErrors = new Map()
+const pendingOAuthStates = new Map()
 
 function requiredEnv(name) {
   const value = process.env[name]
@@ -79,10 +85,10 @@ function jsonResponse({ status, body }) {
   }
 }
 
-function redirectResponse(location) {
+function redirectResponse({ location, extraHeaders = {} }) {
   return {
     status: 302,
-    headers: { location },
+    headers: { location, ...extraHeaders },
     body: '',
   }
 }
@@ -140,22 +146,18 @@ class HttpError extends Error {
   }
 }
 
-function signState({ payload, secret }) {
-  const encoded = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url')
-  const hmac = crypto.createHmac('sha256', secret).update(encoded).digest('base64url')
-  return `${encoded}.${hmac}`
+function signCookieValue({ stateId, secret }) {
+  const hmac = crypto.createHmac('sha256', secret).update(stateId).digest('base64url')
+  return `${stateId}.${hmac}`
 }
 
-function verifyState({ state, secret }) {
-  const parts = state.split('.')
+function verifyCookieValue({ cookieValue, secret }) {
+  const parts = cookieValue.split('.')
   if (parts.length !== 2 || !parts[0] || !parts[1]) {
     return null
   }
-  const [encoded, givenHmac] = parts
-  const expectedHmac = crypto
-    .createHmac('sha256', secret)
-    .update(encoded)
-    .digest('base64url')
+  const [stateId, givenHmac] = parts
+  const expectedHmac = crypto.createHmac('sha256', secret).update(stateId).digest('base64url')
   const given = Buffer.from(givenHmac)
   const expected = Buffer.from(expectedHmac)
   if (given.length !== expected.length) {
@@ -164,22 +166,48 @@ function verifyState({ state, secret }) {
   if (!crypto.timingSafeEqual(given, expected)) {
     return null
   }
-  let payload
-  try {
-    payload = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'))
-  } catch {
-    return null
+  return stateId
+}
+
+function parseCookies(header) {
+  const cookies = new Map()
+  if (!header) {
+    return cookies
   }
-  if (!payload || typeof payload !== 'object') {
-    return null
+  for (const part of header.split(';')) {
+    const idx = part.indexOf('=')
+    if (idx === -1) {
+      continue
+    }
+    const key = part.slice(0, idx).trim()
+    const value = part.slice(idx + 1).trim()
+    cookies.set(key, value)
   }
-  if (typeof payload.exp !== 'number' || Date.now() > payload.exp) {
-    return null
+  return cookies
+}
+
+function oauthCookieHeader({ stateId, secret }) {
+  const value = signCookieValue({ stateId, secret })
+  const parts = [
+    `${OAUTH_COOKIE_NAME}=${value}`,
+    'HttpOnly',
+    'Path=/',
+    'SameSite=Lax',
+    `Max-Age=${Math.floor(STATE_TTL_MS / 1000)}`,
+  ]
+  if (publicWebsiteUrl().startsWith('https://')) {
+    parts.push('Secure')
   }
-  if (typeof payload.clientId !== 'string' || typeof payload.clientSecret !== 'string') {
-    return null
+  return parts.join('; ')
+}
+
+function pruneExpiredOAuthStates() {
+  const now = Date.now()
+  for (const [stateId, payload] of pendingOAuthStates) {
+    if (now > payload.exp) {
+      pendingOAuthStates.delete(stateId)
+    }
   }
-  return payload
 }
 
 function rememberOnboardingError({ clientId, message }) {
@@ -209,7 +237,7 @@ function installSuccessUrl({ error }) {
   return url.toString()
 }
 
-async function handleDiscordInstall({ url, authSecret }) {
+function handleDiscordInstall({ url, authSecret }) {
   const clientId = url.searchParams.get('clientId')
   const clientSecret = url.searchParams.get('clientSecret')
   const kimakiCallbackUrl = url.searchParams.get('kimakiCallbackUrl')
@@ -223,26 +251,30 @@ async function handleDiscordInstall({ url, authSecret }) {
     throw new HttpError(400, 'kimakiCallbackUrl must use https (or http for localhost)')
   }
 
-  const state = signState({
-    secret: authSecret,
-    payload: {
-      clientId,
-      clientSecret,
-      kimakiCallbackUrl,
-      reachableUrl,
-      exp: Date.now() + STATE_TTL_MS,
-    },
+  pruneExpiredOAuthStates()
+  const stateId = crypto.randomBytes(32).toString('base64url')
+  pendingOAuthStates.set(stateId, {
+    clientId,
+    clientSecret,
+    kimakiCallbackUrl,
+    reachableUrl,
+    exp: Date.now() + STATE_TTL_MS,
   })
 
   const authorizeUrl = new URL(DISCORD_AUTHORIZE_URL)
   authorizeUrl.searchParams.set('client_id', requiredEnv('DISCORD_CLIENT_ID'))
   authorizeUrl.searchParams.set('permissions', DISCORD_BOT_PERMISSIONS)
-  authorizeUrl.searchParams.set('scope', 'bot applications.commands')
+  authorizeUrl.searchParams.set('scope', 'bot applications.commands identify')
   authorizeUrl.searchParams.set('response_type', 'code')
   authorizeUrl.searchParams.set('redirect_uri', oauthRedirectUri())
   authorizeUrl.searchParams.set('prompt', 'consent')
-  authorizeUrl.searchParams.set('state', state)
-  return redirectResponse(authorizeUrl.toString())
+  authorizeUrl.searchParams.set('state', stateId)
+  return redirectResponse({
+    location: authorizeUrl.toString(),
+    extraHeaders: {
+      'set-cookie': oauthCookieHeader({ stateId, secret: authSecret }),
+    },
+  })
 }
 
 async function exchangeDiscordCode({ code }) {
@@ -267,19 +299,39 @@ async function exchangeDiscordCode({ code }) {
   return json
 }
 
+async function fetchDiscordUserId({ accessToken }) {
+  if (!accessToken || typeof accessToken !== 'string') {
+    return undefined
+  }
+  const response = await fetch(DISCORD_USERS_ME_URL, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  if (!response.ok) {
+    return undefined
+  }
+  const profile = await response.json().catch(() => {
+    return null
+  })
+  if (!profile || typeof profile !== 'object' || typeof profile.id !== 'string') {
+    return undefined
+  }
+  return profile.id
+}
+
 async function upsertGatewayClient({
   pool,
   clientId,
   secret,
   guildId,
   reachableUrl,
+  discordUserId,
 }) {
   await pool.query(
-    `INSERT INTO gateway_clients (client_id, secret, guild_id, reachable_url, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, NOW(), NOW())
+    `INSERT INTO gateway_clients (client_id, secret, guild_id, reachable_url, discord_user_id, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
      ON CONFLICT (client_id, guild_id)
-     DO UPDATE SET secret = EXCLUDED.secret, reachable_url = EXCLUDED.reachable_url, updated_at = NOW()`,
-    [clientId, secret, guildId, reachableUrl || null],
+     DO UPDATE SET secret = EXCLUDED.secret, reachable_url = EXCLUDED.reachable_url, discord_user_id = EXCLUDED.discord_user_id, updated_at = NOW()`,
+    [clientId, secret, guildId, reachableUrl || null, discordUserId || null],
   )
   await pool.query(
     `UPDATE gateway_clients SET secret = $2, updated_at = NOW() WHERE client_id = $1`,
@@ -287,28 +339,57 @@ async function upsertGatewayClient({
   )
 }
 
-async function handleDiscordCallback({ url, authSecret, pool }) {
+function readOAuthPayload({ url, cookieHeader, authSecret }) {
+  const stateId = url.searchParams.get('state') || ''
+  if (!stateId) {
+    return null
+  }
+  const cookies = parseCookies(cookieHeader)
+  const cookieValue = cookies.get(OAUTH_COOKIE_NAME)
+  if (!cookieValue) {
+    return null
+  }
+  const cookieStateId = verifyCookieValue({ cookieValue, secret: authSecret })
+  if (!cookieStateId || cookieStateId !== stateId) {
+    return null
+  }
+  pruneExpiredOAuthStates()
+  const payload = pendingOAuthStates.get(stateId)
+  if (!payload) {
+    return null
+  }
+  if (Date.now() > payload.exp) {
+    pendingOAuthStates.delete(stateId)
+    return null
+  }
+  pendingOAuthStates.delete(stateId)
+  return payload
+}
+
+async function handleDiscordCallback({ url, cookieHeader, authSecret, pool }) {
   const oauthError = url.searchParams.get('error')
-  const state = url.searchParams.get('state') || ''
-  const payload = verifyState({ state, secret: authSecret })
+  const payload = readOAuthPayload({ url, cookieHeader, authSecret })
 
   if (oauthError) {
     const message = url.searchParams.get('error_description') || oauthError
     if (payload?.clientId) {
       rememberOnboardingError({ clientId: payload.clientId, message })
     }
-    return redirectResponse(installSuccessUrl({ error: message }))
+    return redirectResponse({ location: installSuccessUrl({ error: message }) })
   }
 
   if (!payload) {
-    return redirectResponse(
-      installSuccessUrl({ error: 'OAuth state was missing or expired. Try installing again.' }),
-    )
+    return redirectResponse({
+      location: installSuccessUrl({
+        error:
+          'OAuth session was missing or expired. Start install from the same browser and try again.',
+      }),
+    })
   }
 
   const fail = (message) => {
     rememberOnboardingError({ clientId: payload.clientId, message })
-    return redirectResponse(installSuccessUrl({ error: message }))
+    return redirectResponse({ location: installSuccessUrl({ error: message }) })
   }
 
   const code = url.searchParams.get('code')
@@ -334,6 +415,12 @@ async function handleDiscordCallback({ url, authSecret, pool }) {
     )
   }
 
+  const accessToken =
+    token && typeof token === 'object' && typeof token.access_token === 'string'
+      ? token.access_token
+      : undefined
+  const discordUserId = await fetchDiscordUserId({ accessToken })
+
   try {
     await upsertGatewayClient({
       pool,
@@ -341,6 +428,7 @@ async function handleDiscordCallback({ url, authSecret, pool }) {
       secret: payload.clientSecret,
       guildId,
       reachableUrl: payload.reachableUrl,
+      discordUserId,
     })
   } catch (error) {
     console.error('gateway onboarding upsert failed', error)
@@ -351,10 +439,10 @@ async function handleDiscordCallback({ url, authSecret, pool }) {
   if (parsedCallback) {
     parsedCallback.searchParams.set('guild_id', guildId)
     parsedCallback.searchParams.set('client_id', payload.clientId)
-    return redirectResponse(parsedCallback.toString())
+    return redirectResponse({ location: parsedCallback.toString() })
   }
 
-  return redirectResponse(installSuccessUrl({ error: undefined }))
+  return redirectResponse({ location: installSuccessUrl({ error: undefined }) })
 }
 
 async function handleOnboardingStatus({ url, pool }) {
@@ -368,14 +456,18 @@ async function handleOnboardingStatus({ url, pool }) {
   }
 
   const result = await pool.query(
-    `SELECT guild_id FROM gateway_clients WHERE client_id = $1 AND secret = $2 LIMIT 1`,
+    `SELECT guild_id, discord_user_id FROM gateway_clients WHERE client_id = $1 AND secret = $2 LIMIT 1`,
     [clientId, secret],
   )
   const row = result.rows[0]
   if (row) {
+    const body = { guild_id: row.guild_id }
+    if (row.discord_user_id) {
+      body.discord_user_id = row.discord_user_id
+    }
     return jsonResponse({
       status: 200,
-      body: { guild_id: row.guild_id },
+      body,
     })
   }
 
@@ -414,10 +506,14 @@ async function ensureGatewayClientsTable({ pool }) {
       secret TEXT NOT NULL,
       guild_id TEXT NOT NULL,
       reachable_url TEXT,
+      discord_user_id TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ DEFAULT NOW(),
       PRIMARY KEY (client_id, guild_id)
     )
+  `)
+  await pool.query(`
+    ALTER TABLE gateway_clients ADD COLUMN IF NOT EXISTS discord_user_id TEXT
   `)
 }
 
@@ -434,7 +530,12 @@ async function routeRequest({ req, pool, authSecret }) {
     return handleDiscordInstall({ url, authSecret })
   }
   if (url.pathname === '/api/auth/callback/discord') {
-    return handleDiscordCallback({ url, authSecret, pool })
+    return handleDiscordCallback({
+      url,
+      cookieHeader: req.headers.cookie,
+      authSecret,
+      pool,
+    })
   }
   if (url.pathname === '/api/onboarding/status') {
     return handleOnboardingStatus({ url, pool })

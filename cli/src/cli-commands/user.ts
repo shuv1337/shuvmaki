@@ -38,6 +38,7 @@ import {
   resolveDiscordUserOption,
   sendDiscordMessageWithOptionalAttachment,
 } from '../cli-runner.js'
+import { getKimakiTunnelUrlTemplate } from '../tunnel-config.js'
 
 const cliLogger = createLogger(LogPrefix.CLI)
 const cli = goke()
@@ -150,7 +151,7 @@ cli
         port,
         tunnelId: options.tunnelId || undefined,
         localHost: options.host || undefined,
-        baseDomain: 'kimaki.dev',
+        urlTemplate: getKimakiTunnelUrlTemplate(),
         serverUrl: options.server || undefined,
         command: command.length > 0 ? command : undefined,
         kill: options.kill,

@@ -1,0 +1,52 @@
+server {
+    listen 8000 default_server;
+    server_name _;
+    return 404;
+}
+
+server {
+    listen 8000;
+    server_name shuvmaki.shuv.bot;
+    # OAuth client credentials are query parameters during onboarding.
+    access_log off;
+
+    location / {
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_pass http://127.0.0.1:8080;
+    }
+}
+
+server {
+    listen 8000;
+    server_name gateway.shuv.bot;
+
+    location = /metrics {
+        return 404;
+    }
+
+    location / {
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_pass http://127.0.0.1:7878;
+    }
+}
+
+# Preserve the VM's existing public Kimaki control-plane URL when exe.dev's
+# single public proxy target moves from 33876 to this router.
+server {
+    listen 8000;
+    server_name kimaki.exe.xyz;
+
+    location / {
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_pass http://127.0.0.1:33876;
+    }
+}

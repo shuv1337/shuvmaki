@@ -16,7 +16,11 @@ services:
       - shuvmaki-gateway-postgres:/var/lib/postgresql/data
       - ./init-gateway-clients.sql:/docker-entrypoint-initdb.d/init-gateway-clients.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-shuvmaki} -d ${POSTGRES_DB:-shuvmaki}"]
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-shuvmaki} -d ${POSTGRES_DB:-shuvmaki}",
+        ]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -41,14 +45,15 @@ services:
       DIRECT_DATABASE_URL: postgres://${POSTGRES_USER:-shuvmaki}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-shuvmaki}?sslmode=disable
       DATABASE_URL: postgres://${POSTGRES_USER:-shuvmaki}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-shuvmaki}?sslmode=disable
       # Omit the token JSON key so the binary falls back to TOKEN.
-      # intents 65279 = 32511 (gateway-proxy README example) | 32768 (MESSAGE_CONTENT).
+      # Match Kimaki's client intents: Guilds, Guild Messages, Message Content,
+      # and Guild Voice States. Do not request privileged member/presence access.
       CONFIG: |
         {
           "log_level": "info",
-          "intents": 65279,
+          "intents": 33409,
           "port": 7878,
           "validate_token": true,
-          "externally_accessible_url": "${PUBLIC_GATEWAY_WS_URL:-wss://discord-gateway.kimaki.exe.xyz}",
+          "externally_accessible_url": "${PUBLIC_GATEWAY_WS_URL:-wss://gateway.shuv.bot}",
           "cache": {
             "channels": false,
             "presences": false,
@@ -80,7 +85,7 @@ services:
       DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID:?set DISCORD_CLIENT_ID in .env}
       DISCORD_CLIENT_SECRET: ${DISCORD_CLIENT_SECRET:?set DISCORD_CLIENT_SECRET in .env}
       AUTH_SECRET: ${AUTH_SECRET:?set AUTH_SECRET in .env}
-      PUBLIC_WEBSITE_URL: ${PUBLIC_WEBSITE_URL:-https://kimaki.exe.xyz}
+      PUBLIC_WEBSITE_URL: ${PUBLIC_WEBSITE_URL:-https://shuvmaki.shuv.bot}
     depends_on:
       postgres:
         condition: service_healthy

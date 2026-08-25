@@ -1,19 +1,19 @@
 ---
 title: Self-hosted shuvmaki Discord gateway
 description: Compose stack for postgres, gateway-proxy, and VM onboarding HTTP
-  so shuvmaki can run the Discord gateway on kimaki.exe.xyz instead of
+  so shuvmaki can run the Discord gateway on shuvmaki.shuv.bot instead of
   kimaki.dev.
 prompt: |
   Follow-up on the same shuvmaki branch/PR: add a self-hosted shuvmaki
   gateway stack (docs + compose/config only, no secrets, do not register a
   Discord app). Goal: run OUR Discord-gateway-proxy + onboarding on exe.dev
-  (kimaki.exe.xyz), not kimaki.dev. Upstream facts: CLI honors
+  (shuvmaki.shuv.bot), not kimaki.dev. Upstream facts: CLI honors
   KIMAKI_WEBSITE_URL, KIMAKI_GATEWAY_APP_ID, KIMAKI_GATEWAY_PROXY_URL.
   --gateway generates clientId+clientSecret, opens /discord-install,
   website OAuth-callbacks into Postgres gateway_clients, CLI polls
   /api/onboarding/status, then IDENTIFY to the proxy as clientId:clientSecret.
   gateway-proxy is submodule remorses/gateway-proxy branch
-  multi-client-support. Config: token or TOKEN env, intents 32511, port 7878,
+  multi-client-support. Config: token or TOKEN env, intents 33409, port 7878,
   externally_accessible_url, optional clients map. DB DIRECT_DATABASE_URL or
   DATABASE_URL, table gateway_clients (client_id, secret, guild_id).
   @cli/src/utils.ts @cli/src/cli-runner.ts @website/src/auth.ts
@@ -25,8 +25,8 @@ prompt: |
 # Self-hosted shuvmaki gateway
 
 This directory is a **compose/config example** for running the shared Discord
-bot on **exe.dev** (`kimaki.exe.xyz`), not kimaki.dev. It does not register a
-Discord application and does not contain tokens.
+bot on **exe.dev**, with onboarding at `shuvmaki.shuv.bot` and the gateway at
+`gateway.shuv.bot`. It does not register a Discord application or contain tokens.
 
 Stack:
 
@@ -58,7 +58,7 @@ string**. Public Key is **not** required (no HTTP Interactions endpoint).
 OAuth2 → General → Redirects, add exactly:
 
 ```
-https://kimaki.exe.xyz/api/auth/callback/discord
+https://shuvmaki.shuv.bot/api/auth/callback/discord
 ```
 
 If `PUBLIC_WEBSITE_URL` is different, the redirect URI is
@@ -81,12 +81,11 @@ OAuth scopes requested at install time (not a portal redirect setting):
 Install credentials stay on the onboarding server (random `state` id + HttpOnly
 cookie). `clientSecret` is not put on the Discord authorize URL.
 
-## Proxy intents (32511 + Message Content)
+## Proxy intents
 
-`gateway-proxy` README examples use **intents 32511**. That bitfield does **not**
-include MESSAGE_CONTENT (`32768`). This compose uses **65279**
-(`32511 | 32768`) so IDENTIFY asks for message content after you enable the
-privileged intent in the portal.
+This compose uses **33409**: Guilds (`1`), Guild Voice States (`128`), Guild
+Messages (`512`), and Message Content (`32768`). It intentionally omits the
+privileged Guild Members and Presence intents.
 
 Port is **7878**. `token` may be omitted in JSON; the binary reads `TOKEN`.
 `externally_accessible_url` must be the public `wss://` URL (CLI
@@ -107,9 +106,10 @@ gateway_clients (client_id, secret, guild_id) PK (client_id, guild_id)
 On machines that run `kimaki --gateway`:
 
 ```bash
-export KIMAKI_WEBSITE_URL=https://kimaki.exe.xyz
-export KIMAKI_GATEWAY_PROXY_URL=wss://discord-gateway.kimaki.exe.xyz
-export KIMAKI_GATEWAY_APP_ID=<Kyle's Application ID>
+export KIMAKI_WEBSITE_URL=https://shuvmaki.shuv.bot
+export KIMAKI_GATEWAY_PROXY_URL=wss://gateway.shuv.bot
+export KIMAKI_GATEWAY_APP_ID=1541729625711968396
+export KIMAKI_TUNNEL_URL_TEMPLATE='https://{id}-tunnel.shuv.bot'
 ```
 
 See `cli.env.example`. Do not hardcode secrets. When `KIMAKI_WEBSITE_URL` is
@@ -143,14 +143,15 @@ docker compose up --build
 fails closed if it is empty. Do not use `change-me`.
 
 First proxy image build compiles the Rust submodule (nightly, `TARGET_CPU=x86-64`).
-Onboarding (`8080`) and gateway-proxy (`7878`) bind **loopback only**. Put TLS
-in front with host Caddy using `caddyfile.example` (or exe.dev HTTPS):
+Onboarding (`8080`) and gateway-proxy (`7878`) bind **loopback only**. Host nginx
+listens on port `8000`, which is the VM's exe.dev public ingress target:
 
-- `kimaki.exe.xyz` → `127.0.0.1:8080`
-- `discord-gateway.kimaki.exe.xyz` → `127.0.0.1:7878` (WebSocket + REST)
+- `shuvmaki.shuv.bot` → `127.0.0.1:8080`
+- `gateway.shuv.bot` → `127.0.0.1:7878` (WebSocket + REST)
+- `kimaki.exe.xyz` → `127.0.0.1:33876` (existing direct bot)
 
-Do not publish those ports on `0.0.0.0`. The Caddyfile uses loopback addresses,
-not Docker DNS names, because Caddy runs on the host.
+Do not publish those ports on `0.0.0.0`. See `nginx.conf.example`; it uses
+loopback addresses rather than Docker DNS names because nginx runs on the host.
 
 To mount a config file instead of the compose `CONFIG` env, copy
 `config.example.json` to `config.json` (gitignored), leave `token` omitted, set

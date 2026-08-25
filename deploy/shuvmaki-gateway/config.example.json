@@ -1,9 +1,9 @@
 {
   "log_level": "info",
-  "intents": 65279,
+  "intents": 33409,
   "port": 7878,
   "validate_token": true,
-  "externally_accessible_url": "wss://discord-gateway.kimaki.exe.xyz",
+  "externally_accessible_url": "wss://gateway.shuv.bot",
   "cache": {
     "channels": false,
     "presences": false,

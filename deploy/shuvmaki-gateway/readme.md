@@ -118,6 +118,10 @@ to the kimaki.dev bot `1477605701202481173` and **does not** default
 `KIMAKI_GATEWAY_PROXY_URL` to `wss://discord-gateway.kimaki.dev` — both
 variables are required.
 
+Do not export `KIMAKI_BOT_TOKEN` in the gateway client service. That environment
+variable takes precedence over saved credentials and switches the client back
+to direct bot-token authentication.
+
 Then:
 
 ```bash

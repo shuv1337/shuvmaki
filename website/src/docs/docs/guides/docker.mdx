@@ -1,12 +1,12 @@
 ---
 $schema: https://holocron.so/frontmatter.json
-title: Deploy Kimaki on a VPS with Docker
+title: Deploy shuvmaki on a VPS with Docker
 sidebarTitle: Docker
-description: Run Kimaki in a Docker container on any VPS. Persist credentials on a volume, copy the install URL from the logs, and authorize the shared bot.
+description: Run shuvmaki in a Docker container on any VPS. Persist credentials on a volume, copy the install URL from the logs, and authorize the shared bot.
 icon: lucide:container
 ---
 
-Run Kimaki on a **VPS** the same way you run it on your laptop: one container, one persistent volume, **gateway mode**. You do not create a Discord bot. The shared Kimaki bot is installed into your server from a URL printed in the container logs.
+Run shuvmaki on a **VPS** the same way you run it on your laptop: one container, one persistent volume, **gateway mode**. You do not create a Discord bot. The shared shuvmaki bot is installed into your server from a URL printed in the container logs.
 
 ```bash
 docker compose up -d
@@ -17,10 +17,10 @@ Look for a line that starts with `data: {"type":"install_url"`. Open that URL, p
 
 ## How it works
 
-The container runs `kimaki --gateway`. On first boot Kimaki creates local credentials, prints an **install URL**, and waits for you to authorize the shared bot. After that it connects through the [gateway proxy](../reference/gateway-architecture.mdx) and listens for Discord messages.
+The container runs `kimaki --gateway`. On first boot shuvmaki creates local credentials, prints an **install URL**, and waits for you to authorize the shared bot. After that it connects through the [gateway proxy](../reference/gateway-architecture.mdx) and listens for Discord messages.
 
 ```diagram
-  Your VPS                         Kimaki cloud                    Discord
+  Your VPS                         shuvmaki cloud                    Discord
  ┌──────────────────────────┐     ┌─────────────────────┐     ┌──────────────┐
  │  Docker                  │     │                     │     │              │
  │  kimaki --gateway        │────>│  gateway proxy      │────>│  your server │
@@ -33,13 +33,13 @@ The container runs `kimaki --gateway`. On first boot Kimaki creates local creden
 
 <Aside>
 <Tip>
-A working image used by the public Kimaki demo lives in [`kimaki-demo/Dockerfile`](https://github.com/remorses/kimaki/blob/main/kimaki-demo/Dockerfile). The files below are the same idea, written for a normal VPS instead of Fly.io.
+A working image used by the public shuvmaki demo lives in [`kimaki-demo/Dockerfile`](https://github.com/remorses/kimaki/blob/main/kimaki-demo/Dockerfile). The files below are the same idea, written for a normal VPS instead of Fly.io.
 </Tip>
 </Aside>
 
 ## Dockerfile
 
-Create a directory on the VPS, then add this **Dockerfile**. Pin a Kimaki version if you want reproducible deploys.
+Create a directory on the VPS, then add this **Dockerfile**. Pin a shuvmaki version if you want reproducible deploys.
 
 ```dockerfile
 FROM node:24-slim
@@ -60,7 +60,7 @@ ENV PATH="/root/.opencode/bin:$PATH"
 RUN mkdir -p /data/projects
 WORKDIR /data
 
-# --gateway: shared Kimaki bot, no Discord bot token
+# --gateway: shared shuvmaki bot, no Discord bot token
 # --data-dir /data: sqlite DB and credentials on the volume
 # --projects-dir /data/projects: folders created by /create-new-project
 # --auto-restart: respawn the bot process after a crash
@@ -103,7 +103,7 @@ Give the machine about **2 GB RAM**. OpenCode plus the bot is tight on 1 GB once
 
 ## Get the install URL from the logs
 
-Docker has no TTY, so Kimaki prints structured **SSE** events on stdout. The first event is the install URL.
+Docker has no TTY, so shuvmaki prints structured **SSE** events on stdout. The first event is the install URL.
 
 ```bash
 docker compose logs -f
@@ -162,7 +162,7 @@ Add these to `CMD` when they match how you want the VPS to behave.
 | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `--allow-all-users`      | Anyone in the Discord server can start sessions. The `no-kimaki` role still blocks. Default access is [role-based](../configuration/access-control.mdx). |
 | `--restrict-directories` | The agent must ask before leaving the project folder.                                                                                                    |
-| `--no-auto-upgrade`      | Stop Kimaki from upgrading itself on boot. You control versions by rebuilding the image.                                                                 |
+| `--no-auto-upgrade`      | Stop shuvmaki from upgrading itself on boot. You control versions by rebuilding the image.                                                                 |
 | `--verbosity <level>`    | Default thread verbosity. See [Verbosity](../configuration/verbosity.mdx).                                                                               |
 
 A public demo or shared box usually wants `--allow-all-users` and an OpenCode config that auto-allows tools, because nobody is sitting on permission buttons. A personal VPS can keep the defaults and approve tools from Discord.
@@ -187,8 +187,8 @@ docker compose logs -f
 docker compose exec kimaki bash
 ```
 
-The Kimaki log file is `/data/kimaki.log`. It resets every time the bot process starts. See [Troubleshooting](./troubleshooting.mdx) if sessions stall after the bot is online.
+The shuvmaki log file is `/data/kimaki.log`. It resets every time the bot process starts. See [Troubleshooting](./troubleshooting.mdx) if sessions stall after the bot is online.
 
 ## One bot per machine
 
-Each Kimaki process can only see directories **inside this container**. That is the same rule as a laptop install. To drive another machine, run another container (or a native `kimaki` process) there and install that instance into the same Discord server. See [Advanced Setup](./advanced-setup.mdx).
+Each shuvmaki process can only see directories **inside this container**. That is the same rule as a laptop install. To drive another machine, run another container (or a native `kimaki` process) there and install that instance into the same Discord server. See [Advanced Setup](./advanced-setup.mdx).

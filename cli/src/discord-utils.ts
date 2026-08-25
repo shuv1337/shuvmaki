@@ -46,7 +46,7 @@ export function hasKimakiBotPermission(
   if (!member) {
     return false
   }
-  const hasNoKimakiRole = hasRoleByName(member, 'no-kimaki', guild)
+  const hasNoKimakiRole = hasBlockedBotRole(member, guild)
   if (hasNoKimakiRole) {
     return false
   }
@@ -62,7 +62,7 @@ export function hasKimakiBotPermission(
   const isOwner = ownerId ? memberId === ownerId : false
   const isAdmin = memberPermissions.has(PermissionsBitField.Flags.Administrator)
   const canManageServer = memberPermissions.has(PermissionsBitField.Flags.ManageGuild)
-  const hasKimakiRole = hasRoleByName(member, 'kimaki', guild)
+  const hasKimakiRole = hasAllowedBotRole(member, guild)
   return isOwner || isAdmin || canManageServer || hasKimakiRole
 }
 
@@ -79,7 +79,7 @@ export function hasKimakiAdminPermission(
   if (!member) {
     return false
   }
-  const hasNoKimaki = hasRoleByName(member, 'no-kimaki', guild)
+  const hasNoKimaki = hasBlockedBotRole(member, guild)
   if (hasNoKimaki) {
     return false
   }
@@ -92,7 +92,7 @@ export function hasKimakiAdminPermission(
   const isOwner = ownerId ? memberId === ownerId : false
   const isAdmin = memberPermissions.has(PermissionsBitField.Flags.Administrator)
   const canManageServer = memberPermissions.has(PermissionsBitField.Flags.ManageGuild)
-  const hasKimakiRole = hasRoleByName(member, 'kimaki', guild)
+  const hasKimakiRole = hasAllowedBotRole(member, guild)
   return isOwner || isAdmin || canManageServer || hasKimakiRole
 }
 
@@ -113,6 +113,27 @@ export async function resolveGuildMessageMember(
   }
 
   return fetchedMember
+}
+
+const ALLOWED_BOT_ROLE_NAMES = ['shuvmaki', 'kimaki'] as const
+const BLOCKED_BOT_ROLE_NAMES = ['no-shuvmaki', 'no-kimaki'] as const
+
+function hasAllowedBotRole(
+  member: GuildMemberType | APIInteractionGuildMember,
+  guild?: Guild | null,
+): boolean {
+  return ALLOWED_BOT_ROLE_NAMES.some((roleName) => {
+    return hasRoleByName(member, roleName, guild)
+  })
+}
+
+function hasBlockedBotRole(
+  member: GuildMemberType | APIInteractionGuildMember,
+  guild?: Guild | null,
+): boolean {
+  return BLOCKED_BOT_ROLE_NAMES.some((roleName) => {
+    return hasRoleByName(member, roleName, guild)
+  })
 }
 
 function hasRoleByName(
@@ -148,9 +169,11 @@ export function hasNoKimakiRole(member: GuildMemberType | null): boolean {
   if (!member?.roles?.cache) {
     return false
   }
-  return member.roles.cache.some(
-    (role) => role.name.toLowerCase() === 'no-kimaki',
-  )
+  return BLOCKED_BOT_ROLE_NAMES.some((roleName) => {
+    return member.roles.cache.some(
+      (role) => role.name.toLowerCase() === roleName,
+    )
+  })
 }
 
 /**

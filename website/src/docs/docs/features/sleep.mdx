@@ -6,10 +6,10 @@ icon: lucide:moon
 
 An agent can **put itself to sleep** and wake up later in the same thread. Use it to wait for a deploy, a nightly build, a support reply, or a specific date, without burning tokens and without you remembering to poke it.
 
-The agent calls the **`kimaki_sleep`** tool, the session goes idle, and Kimaki wakes it when the time arrives.
+The agent calls the **`kimaki_sleep`** tool, the session goes idle, and shuvmaki wakes it when the time arrives.
 
 ```diagram
-  agent calls kimaki_sleep        Kimaki checks every 5s         same session resumes
+  agent calls kimaki_sleep        shuvmaki checks every 5s         same session resumes
             │                               │                               │
             ▼                               ▼                               ▼
   ┌────────────────────┐  writes  ┌────────────────────┐   due    ┌────────────────────┐
@@ -48,7 +48,7 @@ In Discord the sleep appears as a normal tool line:
 
 ## Waking up
 
-When the time arrives, Kimaki posts a wake message into the same thread and the session continues with its full history:
+When the time arrives, shuvmaki posts a wake message into the same thread and the session continues with its full history:
 
 ```
 ⬦ Woke after sleeping until 2030-01-01 09:00 UTC
@@ -60,7 +60,7 @@ The wake is a **new turn** on the **same session**, so the agent still remembers
 
 ## It survives restarts
 
-The wake time is stored in SQLite, not in memory. Restarting Kimaki, upgrading it, or rebooting the machine does not lose a pending sleep. The next time the bot runs, the due sleep fires.
+The wake time is stored in SQLite, not in memory. Restarting shuvmaki, upgrading it, or rebooting the machine does not lose a pending sleep. The next time the bot runs, the due sleep fires.
 
 Delivery is **retried until it lands**. A sleep is only marked delivered once the wake has actually started a turn, so a crash midway through waking just retries on the next check. Each wake carries an idempotency key, so a retry can never wake the same session twice.
 

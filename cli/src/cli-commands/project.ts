@@ -174,7 +174,7 @@ cli
     'List all registered projects with their Discord channels',
   )
   .option('--json', 'Output as JSON')
-  .option('--all', 'Include remote projects from other machines (scans Kimaki category in Discord)')
+  .option('--all', 'Include remote projects from other machines (scans shuvmaki category in Discord)')
   .option('-g, --guild <guildId>', 'Discord guild/server ID to scan (used with --all when no local projects exist)')
   .option('--prune', 'Remove stale entries whose Discord channel no longer exists')
   .action(async (options) => {
@@ -272,7 +272,7 @@ cli
           // Find Kimaki category channels (type 4 = GuildCategory)
           const kimakiCategoryIds = new Set(
             guildChannels
-              .filter((ch) => ch.type === 4 && /^kimaki(\s|$)/i.test(ch.name))
+              .filter((ch) => ch.type === 4 && /^(shuvmaki|kimaki)(\s|$)/i.test(ch.name))
               .map((ch) => ch.id),
           )
 

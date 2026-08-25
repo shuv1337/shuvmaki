@@ -117,7 +117,7 @@ child.stdout.on('data', (chunk) => {
 
 | Flag | Required | Description |
 |---|---|---|
-| `--gateway` | yes | Use the shared Kimaki gateway bot |
+| `--gateway` | yes | Use the shared shuvmaki gateway bot |
 | `--restart-onboarding` | for fresh setup | Force the onboarding flow even if saved credentials exist |
 | `--data-dir <path>` | recommended | Isolated data directory per user instance |
 | `--gateway-callback-url <url>` | optional | Redirect user here after OAuth instead of default kimaki page |
@@ -160,7 +160,7 @@ credentials are isolated.
 
 ## Why SSE format instead of plain JSON lines
 
-Process stdout is noisy. Kimaki logs, clack prompts, OpenCode server output,
+Process stdout is noisy. shuvmaki logs, clack prompts, OpenCode server output,
 and debug messages all go to stdout. Parsing JSON by checking if a line starts
 with `{` is fragile — a log line could start with `{` by coincidence.
 

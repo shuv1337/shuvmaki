@@ -253,7 +253,7 @@ export function registerInteractionHandler({
 
           if (!hasKimakiBotPermission(interaction.member, interaction.guild)) {
             await interaction.reply({
-              content: `You don't have permission to use this command.\nTo use Kimaki, ask a server admin to give you the **Kimaki** role.`,
+              content: `You don't have permission to use this command.\nTo use shuvmaki, ask a server admin to give you the **shuvmaki** role.`,
               flags: MessageFlags.Ephemeral,
             })
             return
@@ -352,7 +352,7 @@ export function registerInteractionHandler({
             case 'login':
               if (!hasKimakiAdminPermission(interaction.member, interaction.guild)) {
                 await interaction.reply({
-                  content: `Only server admins or users with the **Kimaki** role can configure login credentials.`,
+                  content: `Only server admins or users with the **shuvmaki** role can configure login credentials.`,
                   flags: MessageFlags.Ephemeral,
                 })
                 return
@@ -419,7 +419,7 @@ export function registerInteractionHandler({
             case 'transcription-key':
               if (!hasKimakiAdminPermission(interaction.member, interaction.guild)) {
                 await interaction.reply({
-                  content: `Only server admins or users with the **Kimaki** role can configure API keys.`,
+                  content: `Only server admins or users with the **shuvmaki** role can configure API keys.`,
                   flags: MessageFlags.Ephemeral,
                 })
                 return
@@ -467,7 +467,7 @@ export function registerInteractionHandler({
         if (interaction.isButton()) {
           if (!hasKimakiBotPermission(interaction.member, interaction.guild)) {
             await interaction.reply({
-              content: `You don't have permission to use this.\nTo use Kimaki, ask a server admin to give you the **Kimaki** role.`,
+              content: `You don't have permission to use this.\nTo use shuvmaki, ask a server admin to give you the **shuvmaki** role.`,
               flags: MessageFlags.Ephemeral,
             })
             return
@@ -478,7 +478,7 @@ export function registerInteractionHandler({
           if (customId.startsWith('transcription_apikey:')) {
             if (!hasKimakiAdminPermission(interaction.member, interaction.guild)) {
               await interaction.reply({
-                content: `Only server admins or users with the **Kimaki** role can configure API keys.`,
+                content: `Only server admins or users with the **shuvmaki** role can configure API keys.`,
                 flags: MessageFlags.Ephemeral,
               })
               return
@@ -504,7 +504,7 @@ export function registerInteractionHandler({
           if (customId.startsWith('login_text_btn:')) {
             if (!hasKimakiAdminPermission(interaction.member, interaction.guild)) {
               await interaction.reply({
-                content: `Only server admins or users with the **Kimaki** role can configure login credentials.`,
+                content: `Only server admins or users with the **shuvmaki** role can configure login credentials.`,
                 flags: MessageFlags.Ephemeral,
               })
               return
@@ -516,7 +516,7 @@ export function registerInteractionHandler({
           if (customId.startsWith('login_apikey_btn:')) {
             if (!hasKimakiAdminPermission(interaction.member, interaction.guild)) {
               await interaction.reply({
-                content: `Only server admins or users with the **Kimaki** role can configure login credentials.`,
+                content: `Only server admins or users with the **shuvmaki** role can configure login credentials.`,
                 flags: MessageFlags.Ephemeral,
               })
               return
@@ -528,7 +528,7 @@ export function registerInteractionHandler({
           if (customId.startsWith('login_oauth_code_btn:')) {
             if (!hasKimakiAdminPermission(interaction.member, interaction.guild)) {
               await interaction.reply({
-                content: `Only server admins or users with the **Kimaki** role can configure login credentials.`,
+                content: `Only server admins or users with the **shuvmaki** role can configure login credentials.`,
                 flags: MessageFlags.Ephemeral,
               })
               return
@@ -553,7 +553,7 @@ export function registerInteractionHandler({
         if (interaction.isStringSelectMenu()) {
           if (!hasKimakiBotPermission(interaction.member, interaction.guild)) {
             await interaction.reply({
-              content: `You don't have permission to use this.\nTo use Kimaki, ask a server admin to give you the **Kimaki** role.`,
+              content: `You don't have permission to use this.\nTo use shuvmaki, ask a server admin to give you the **shuvmaki** role.`,
               flags: MessageFlags.Ephemeral,
             })
             return
@@ -624,7 +624,7 @@ export function registerInteractionHandler({
           if (customId.startsWith('login_select:')) {
             if (!hasKimakiAdminPermission(interaction.member, interaction.guild)) {
               await interaction.reply({
-                content: `Only server admins or users with the **Kimaki** role can configure login credentials.`,
+                content: `Only server admins or users with the **shuvmaki** role can configure login credentials.`,
                 flags: MessageFlags.Ephemeral,
               })
               return
@@ -638,7 +638,7 @@ export function registerInteractionHandler({
         if (interaction.isModalSubmit()) {
           if (!hasKimakiBotPermission(interaction.member, interaction.guild)) {
             await interaction.reply({
-              content: `You don't have permission to use this.\nTo use Kimaki, ask a server admin to give you the **Kimaki** role.`,
+              content: `You don't have permission to use this.\nTo use shuvmaki, ask a server admin to give you the **shuvmaki** role.`,
               flags: MessageFlags.Ephemeral,
             })
             return
@@ -649,7 +649,7 @@ export function registerInteractionHandler({
           if (customId.startsWith('login_apikey:')) {
             if (!hasKimakiAdminPermission(interaction.member, interaction.guild)) {
               await interaction.reply({
-                content: `Only server admins or users with the **Kimaki** role can configure credentials.`,
+                content: `Only server admins or users with the **shuvmaki** role can configure credentials.`,
                 flags: MessageFlags.Ephemeral,
               })
               return
@@ -661,7 +661,7 @@ export function registerInteractionHandler({
           if (customId.startsWith('login_text:')) {
             if (!hasKimakiAdminPermission(interaction.member, interaction.guild)) {
               await interaction.reply({
-                content: `Only server admins or users with the **Kimaki** role can configure credentials.`,
+                content: `Only server admins or users with the **shuvmaki** role can configure credentials.`,
                 flags: MessageFlags.Ephemeral,
               })
               return
@@ -673,7 +673,7 @@ export function registerInteractionHandler({
           if (customId.startsWith('login_oauth_code:')) {
             if (!hasKimakiAdminPermission(interaction.member, interaction.guild)) {
               await interaction.reply({
-                content: `Only server admins or users with the **Kimaki** role can configure credentials.`,
+                content: `Only server admins or users with the **shuvmaki** role can configure credentials.`,
                 flags: MessageFlags.Ephemeral,
               })
               return
@@ -685,7 +685,7 @@ export function registerInteractionHandler({
           if (customId.startsWith('transcription_apikey_modal:')) {
             if (!hasKimakiAdminPermission(interaction.member, interaction.guild)) {
               await interaction.reply({
-                content: `Only server admins or users with the **Kimaki** role can configure credentials.`,
+                content: `Only server admins or users with the **shuvmaki** role can configure credentials.`,
                 flags: MessageFlags.Ephemeral,
               })
               return

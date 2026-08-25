@@ -1,10 +1,10 @@
 ---
 title: Troubleshooting
-description: How to fix common transient issues with Kimaki.
+description: How to fix common transient issues with shuvmaki.
 icon: lucide:wrench
 ---
 
-Most Kimaki issues are transient and caused by the underlying OpenCode server getting into a bad state. The single most effective fix is **restarting the OpenCode server**.
+Most shuvmaki issues are transient and caused by the underlying OpenCode server getting into a bad state. The single most effective fix is **restarting the OpenCode server**.
 
 ## `/restart-opencode-server`
 
@@ -28,11 +28,11 @@ This is the first thing to try when something goes wrong. Run it in any channel 
 Other channels reconnect automatically through the listener backoff loop once the server comes back up.
 
 > [!NOTE]
-> This restarts the **OpenCode server**, not the Kimaki bot itself. Your bot stays connected to Discord the entire time. Only the backend that runs AI sessions is restarted.
+> This restarts the **OpenCode server**, not the shuvmaki bot itself. Your bot stays connected to Discord the entire time. Only the backend that runs AI sessions is restarted.
 
 ## `/upgrade-and-restart`
 
-If `/restart-opencode-server` does not fix the issue, the problem is likely in Kimaki itself rather than the OpenCode server. Run `/upgrade-and-restart` to update Kimaki to the latest npm release and restart the bot process entirely. This replaces the running code with the newest version, fixing bugs in message handling, Discord event routing, session lifecycle, command registration, and anything else in the bot layer.
+If `/restart-opencode-server` does not fix the issue, the problem is likely in shuvmaki itself rather than the OpenCode server. Run `/upgrade-and-restart` to update shuvmaki to the latest npm release and restart the bot process entirely. This replaces the running code with the newest version, fixing bugs in message handling, Discord event routing, session lifecycle, command registration, and anything else in the bot layer.
 
 **What it fixes (on top of `/restart-opencode-server`):**
 
@@ -41,7 +41,7 @@ If `/restart-opencode-server` does not fix the issue, the problem is likely in K
 - Session lifecycle issues (threads not created, footers stuck, typing indicator stuck)
 - Command registration failures
 - Memory leaks or degraded performance over long runs
-- Any bug that was fixed in a newer Kimaki release
+- Any bug that was fixed in a newer shuvmaki release
 
 You can also upgrade from the terminal:
 
@@ -67,7 +67,7 @@ kimaki upgrade
 
 ## MacBook sleeping with lid closed
 
-If you run Kimaki on a MacBook and close the lid, macOS puts the machine to sleep by default. This means Discord messages stop arriving and sessions go unresponsive.
+If you run shuvmaki on a MacBook and close the lid, macOS puts the machine to sleep by default. This means Discord messages stop arriving and sessions go unresponsive.
 
 `caffeinate` only prevents **idle sleep**; it does not block the hardware sleep triggered by closing the lid.
 

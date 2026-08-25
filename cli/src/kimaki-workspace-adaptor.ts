@@ -1,4 +1,4 @@
-// Kimaki git worktree adaptor for OpenCode's experimental workspace system.
+// shuvmaki git worktree adaptor for OpenCode's experimental workspace system.
 // Runs inside the opencode server process (NOT the bot process).
 //
 // PLUGIN SAFETY: This file must NOT import config.ts, logger.ts, or any
@@ -41,8 +41,8 @@ function computeWorktreeDirectory({
 
 function createKimakiWorktreeAdaptor(projectDirectory: string): WorkspaceAdapter {
   return {
-    name: 'Kimaki Worktree',
-    description: 'Create a git worktree managed by Kimaki',
+    name: 'shuvmaki Worktree',
+    description: 'Create a git worktree managed by shuvmaki',
 
     configure(info: WorkspaceInfo): WorkspaceInfo {
       const branchName = info.branch || info.name

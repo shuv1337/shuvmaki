@@ -4,11 +4,11 @@ description: Approve or deny risky tool calls from Discord, protect specific dir
 icon: lucide:shield-check
 ---
 
-Kimaki surfaces OpenCode's **permission system** in Discord. When the agent tries something that needs approval, you get buttons in the thread. You can also pre-configure defaults and restrict individual sessions.
+shuvmaki surfaces OpenCode's **permission system** in Discord. When the agent tries something that needs approval, you get buttons in the thread. You can also pre-configure defaults and restrict individual sessions.
 
 ## Approval buttons
 
-When the agent attempts a tool call that requires permission (a shell command, accessing files outside the project, etc.), Kimaki posts three buttons in the thread:
+When the agent attempts a tool call that requires permission (a shell command, accessing files outside the project, etc.), shuvmaki posts three buttons in the thread:
 
 ```diagram
    agent wants to run a command
@@ -35,7 +35,7 @@ OpenCode fixes a permission's scope when it asks. A reply can allow or deny, but
 
 **Every directory is allowed by default.** The agent can read and edit files outside the project without asking. OpenCode's own default is to ask for each external folder, which turned ordinary reads into a stream of approval prompts.
 
-To protect specific folders, add `deny` or `ask` rules to your `opencode.json`. Your project config is merged **after** Kimaki's defaults and the last matching rule wins, so your rules take priority:
+To protect specific folders, add `deny` or `ask` rules to your `opencode.json`. Your project config is merged **after** shuvmaki's defaults and the last matching rule wins, so your rules take priority:
 
 ```json
 {
@@ -50,7 +50,7 @@ To protect specific folders, add `deny` or `ask` rules to your `opencode.json`. 
 }
 ```
 
-Kimaki writes `"external_directory": { "*": "allow" }`, so the keys above merge on top of that wildcard. Paths you don't list stay allowed.
+shuvmaki writes `"external_directory": { "*": "allow" }`, so the keys above merge on top of that wildcard. Paths you don't list stay allowed.
 
 To flip the default back to a strict allow-list, start the bot with **`--restrict-directories`**:
 

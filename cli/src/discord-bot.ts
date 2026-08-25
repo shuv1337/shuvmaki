@@ -158,8 +158,8 @@ const voiceLogger = createLogger(LogPrefix.VOICE)
 
 const MISSING_MESSAGE_CONTENT_REPLY = dedent`
   I can see you sent a message, but Discord did not include its text.
-  Mention me and send it again, like \`@Kimaki fix the failing test\`, so I can read it.
-  To avoid this reminder, start Kimaki with \`--mention-mode\` so it only reacts to mentioned messages.
+  Mention me and send it again, like \`@shuvmaki fix the failing test\`, so I can read it.
+  To avoid this reminder, start shuvmaki with \`--mention-mode\` so it only reacts to mentioned messages.
 `
 
 function isMissingReadableMessageContent(message: Message) {
@@ -613,7 +613,7 @@ export async function startDiscordBot({
 
         if (hasNoKimakiRole(member)) {
           await message.reply({
-            content: `You have the **no-kimaki** role which blocks bot access.\nRemove this role to use Kimaki.`,
+            content: `You have the **no-kimaki** or **no-shuvmaki** role which blocks bot access.\nRemove this role to use shuvmaki.`,
             flags: SILENT_MESSAGE_FLAGS,
           })
           return
@@ -621,7 +621,7 @@ export async function startDiscordBot({
 
         if (!hasKimakiBotPermission(member, message.guild)) {
           await message.reply({
-            content: `You don't have permission to start sessions.\nTo use Kimaki, ask a server admin to give you the **Kimaki** role.`,
+            content: `You don't have permission to start sessions.\nTo use shuvmaki, ask a server admin to give you the **shuvmaki** role.`,
             flags: SILENT_MESSAGE_FLAGS,
           })
           return

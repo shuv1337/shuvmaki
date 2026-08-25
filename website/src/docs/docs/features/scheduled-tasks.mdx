@@ -4,7 +4,7 @@ description: Run the bot on a schedule, cron or a one-time future time, for dige
 icon: lucide:calendar-clock
 ---
 
-Kimaki can run a prompt **on a schedule**: once at a future time, or repeatedly on a cron expression. This turns the bot into an autonomous worker that wakes up, does a job, and posts the result as a Discord thread you can reply to.
+shuvmaki can run a prompt **on a schedule**: once at a future time, or repeatedly on a cron expression. This turns the bot into an autonomous worker that wakes up, does a job, and posts the result as a Discord thread you can reply to.
 
 ## Scheduling with `--send-at`
 
@@ -121,9 +121,9 @@ kimaki send --channel <channel-id> \
   --prompt 'Read the Crisp session IDs in the pre-run output. Use crisp-cli to inspect each conversation and draft a support reply.'
 ```
 
-An exit code of **0 starts the session**. Kimaki appends the command's stdout to the task prompt. Any other exit code skips that occurrence. Stdout and stderr are also written to the Kimaki log.
+An exit code of **0 starts the session**. shuvmaki appends the command's stdout to the task prompt. Any other exit code skips that occurrence. Stdout and stderr are also written to the shuvmaki log.
 
-Scheduled tasks **do not overlap by default**. If one occurrence still has an active OpenCode session, Kimaki skips the next occurrence and checks again at the following scheduled time. Add `--allow-concurrency` only when parallel runs are safe.
+Scheduled tasks **do not overlap by default**. If one occurrence still has an active OpenCode session, shuvmaki skips the next occurrence and checks again at the following scheduled time. Add `--allow-concurrency` only when parallel runs are safe.
 
 ## Managing tasks
 

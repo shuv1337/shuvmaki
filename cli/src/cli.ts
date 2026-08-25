@@ -32,13 +32,13 @@ import {
 } from './cli-runner.js'
 
 const cliLogger = createLogger(LogPrefix.CLI)
-const cli = goke('kimaki')
+const cli = goke('shuvmaki')
 cli.use(multioauthCommands)
 
-process.title = 'kimaki'
+process.title = 'shuvmaki'
 
 cli
-  .command('', 'Set up and run the Kimaki Discord bot')
+  .command('', 'Set up and run the shuvmaki Discord bot')
   .option('--restart-onboarding', 'Prompt for new credentials even if saved')
   .option(
     '--add-channels',
@@ -79,7 +79,7 @@ cli
   )
   .option(
     '--allow-all-users',
-    'Allow all Discord users to start sessions without needing Kimaki role or admin permissions (no-kimaki role still blocks)',
+    'Allow all Discord users to start sessions without needing shuvmaki role or admin permissions (no-kimaki / no-shuvmaki role still blocks)',
   )
   .option(
     '--restrict-directories',
@@ -100,7 +100,7 @@ cli
   .option('--no-auto-upgrade', 'Disable background auto-upgrade on startup')
   .option(
     '--gateway',
-    'Force gateway mode (use the gateway Kimaki bot instead of a self-hosted bot)',
+    'Force gateway mode (use the upstream kimaki hosted bot instead of a self-hosted bot)',
   )
   .option(
     '--gateway-callback-url <url>',
@@ -121,7 +121,7 @@ cli
       .array(z.string())
       .optional()
       .describe(
-        'Whitelist a built-in skill by name. Only the listed skills are injected into the model (all others are hidden via an opencode permission.skill deny-all rule). Repeatable: pass --enable-skill multiple times. Mutually exclusive with --disable-skill. See https://github.com/remorses/kimaki/tree/main/skills for available skills.',
+        'Whitelist a built-in skill by name. Only the listed skills are injected into the model (all others are hidden via an opencode permission.skill deny-all rule). Repeatable: pass --enable-skill multiple times. Mutually exclusive with --disable-skill. See https://github.com/shuv1337/shuvmaki/tree/main/skills for available skills.',
       ),
   )
   .option(
@@ -130,7 +130,7 @@ cli
       .array(z.string())
       .optional()
       .describe(
-        'Blacklist a built-in skill by name. Listed skills are hidden from the model. Repeatable: pass --disable-skill multiple times. Mutually exclusive with --enable-skill. See https://github.com/remorses/kimaki/tree/main/skills for available skills.',
+        'Blacklist a built-in skill by name. Listed skills are hidden from the model. Repeatable: pass --disable-skill multiple times. Mutually exclusive with --enable-skill. See https://github.com/shuv1337/shuvmaki/tree/main/skills for available skills.',
       ),
   )
   .action(

@@ -77,14 +77,14 @@ async function resolveSessionDirectoryFromDatabase({
   }
 
   return new Error(
-    `Session is not linked to a Kimaki thread in the local database: ${sessionId}`,
+    `Session is not linked to a shuvmaki thread in the local database: ${sessionId}`,
   )
 }
 
 cli
   .command(
     'session list',
-    'List all OpenCode sessions, marking which were started via Kimaki',
+    'List all OpenCode sessions, marking which were started via shuvmaki',
   )
   .option(
     '--project <path>',
@@ -502,7 +502,7 @@ cli
 cli
   .command(
     'session export-events-jsonl',
-    'Export persisted session events from SQLite to JSONL for debugging Kimaki runtime bugs',
+    'Export persisted session events from SQLite to JSONL for debugging shuvmaki runtime bugs',
   )
   .option(
     '--session <sessionId>',
@@ -510,7 +510,7 @@ cli
   )
   .option(
     '--out <file>',
-    'Output .jsonl path (useful for reproducing Kimaki issues in event-stream-state tests)',
+    'Output .jsonl path (useful for reproducing shuvmaki issues in event-stream-state tests)',
   )
   .action(async (options) => {
     const sessionId =

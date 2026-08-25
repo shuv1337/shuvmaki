@@ -1,6 +1,6 @@
 {
   "$schema": "https://holocron.so/docs.json",
-  "name": "Kimaki",
+  "name": "shuvmaki",
   "description": "Iron Man's Jarvis for coding agents, inside Discord",
   "favicon": "/logo.jpeg",
   "colors": {
@@ -16,7 +16,7 @@
     "links": [
       {
         "type": "github",
-        "href": "https://github.com/remorses/kimaki"
+        "href": "https://github.com/shuv1337/shuvmaki"
       },
       {
         "type": "discord",
@@ -121,12 +121,12 @@
     "anchors": [
       {
         "anchor": "GitHub",
-        "href": "https://github.com/remorses/kimaki",
+        "href": "https://github.com/shuv1337/shuvmaki",
         "icon": "lucide:github"
       },
       {
         "anchor": "Changelog",
-        "href": "https://github.com/remorses/kimaki/releases",
+        "href": "https://github.com/shuv1337/shuvmaki/releases",
         "icon": "lucide:scroll-text"
       }
     ]

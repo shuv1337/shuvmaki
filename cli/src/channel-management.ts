@@ -70,17 +70,24 @@ export async function ensureKimakiCategory(
   guild: Guild,
   botName?: string,
 ): Promise<CategoryChannel> {
-  // Skip appending bot name if it's already "kimaki" to avoid "Kimaki kimaki"
-  const isKimakiBot = botName?.toLowerCase() === 'kimaki'
-  const categoryName = botName && !isKimakiBot ? `Kimaki ${botName}` : 'Kimaki'
+  // Default product category is "shuvmaki". Also reuse a pre-existing "Kimaki"
+  // category so upgrading forks do not create a second category.
+  const isDefaultBotName =
+    !botName ||
+    botName.toLowerCase() === 'shuvmaki' ||
+    botName.toLowerCase() === 'kimaki'
+  const categoryNames = isDefaultBotName
+    ? ['shuvmaki', 'kimaki']
+    : [`shuvmaki ${botName}`, `Kimaki ${botName}`]
 
   const existingCategory = guild.channels.cache.find(
     (channel): channel is CategoryChannel => {
       if (channel.type !== ChannelType.GuildCategory) {
         return false
       }
-
-      return channel.name.toLowerCase() === categoryName.toLowerCase()
+      return categoryNames.some((name) => {
+        return channel.name.toLowerCase() === name.toLowerCase()
+      })
     },
   )
 
@@ -89,7 +96,7 @@ export async function ensureKimakiCategory(
   }
 
   return guild.channels.create({
-    name: categoryName,
+    name: categoryNames[0],
     type: ChannelType.GuildCategory,
   })
 }
@@ -98,18 +105,22 @@ export async function ensureKimakiAudioCategory(
   guild: Guild,
   botName?: string,
 ): Promise<CategoryChannel> {
-  // Skip appending bot name if it's already "kimaki" to avoid "Kimaki Audio kimaki"
-  const isKimakiBot = botName?.toLowerCase() === 'kimaki'
-  const categoryName =
-    botName && !isKimakiBot ? `Kimaki Audio ${botName}` : 'Kimaki Audio'
+  const isDefaultBotName =
+    !botName ||
+    botName.toLowerCase() === 'shuvmaki' ||
+    botName.toLowerCase() === 'kimaki'
+  const categoryNames = isDefaultBotName
+    ? ['shuvmaki Audio', 'Kimaki Audio']
+    : [`shuvmaki Audio ${botName}`, `Kimaki Audio ${botName}`]
 
   const existingCategory = guild.channels.cache.find(
     (channel): channel is CategoryChannel => {
       if (channel.type !== ChannelType.GuildCategory) {
         return false
       }
-
-      return channel.name.toLowerCase() === categoryName.toLowerCase()
+      return categoryNames.some((name) => {
+        return channel.name.toLowerCase() === name.toLowerCase()
+      })
     },
   )
 
@@ -118,7 +129,7 @@ export async function ensureKimakiAudioCategory(
   }
 
   return guild.channels.create({
-    name: categoryName,
+    name: categoryNames[0],
     type: ChannelType.GuildCategory,
   })
 }
@@ -245,7 +256,7 @@ export function getDefaultKimakiDirectory(): string {
 }
 
 const DEFAULT_CHANNEL_TOPIC =
-  'General channel for misc tasks with Kimaki. Not connected to a specific OpenCode project or repository.'
+  'General channel for misc tasks with shuvmaki. Not connected to a specific OpenCode project or repository.'
 
 /**
  * Create (or find) the default "kimaki" channel for general-purpose tasks.
@@ -342,7 +353,7 @@ export async function createDefaultKimakiChannel({
     if (ch.parentId !== kimakiCategory.id) {
       return false
     }
-    return ch.name === 'kimaki' || ch.name.startsWith('kimaki-')
+    return ch.name === 'shuvmaki' || ch.name.startsWith('shuvmaki-') || ch.name === 'kimaki' || ch.name.startsWith('kimaki-')
   })
   if (existingByName) {
     logger.log(
@@ -370,20 +381,24 @@ export async function createDefaultKimakiChannel({
     fs.writeFileSync(gitignorePath, DEFAULT_GITIGNORE)
   }
 
-  // Channel name: "kimaki-{botName}" for self-hosted, "kimaki" for gateway
+  // Channel name: "shuvmaki-{botName}" for self-hosted, "kimaki" for gateway
+  // so this fork does not collide with the live kimaki hosted bot.
   const channelName = (() => {
-    if (isGatewayMode || !botName) {
+    if (isGatewayMode) {
       return 'kimaki'
+    }
+    if (!botName) {
+      return 'shuvmaki'
     }
     const sanitized = botName
       .toLowerCase()
       .replace(/[^a-z0-9-]/g, '-')
       .replace(/-+/g, '-')
       .replace(/^-|-$/g, '')
-    if (!sanitized || sanitized === 'kimaki') {
-      return 'kimaki'
+    if (!sanitized || sanitized === 'kimaki' || sanitized === 'shuvmaki') {
+      return 'shuvmaki'
     }
-    return `kimaki-${sanitized}`.slice(0, 100)
+    return `shuvmaki-${sanitized}`.slice(0, 100)
   })()
 
   const textChannel = await guild.channels.create({

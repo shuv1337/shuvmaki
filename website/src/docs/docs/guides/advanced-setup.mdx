@@ -1,6 +1,6 @@
 ---
 title: Advanced Setup
-description: Running multiple Kimaki instances, multiple Discord servers, and architecture details.
+description: Running multiple shuvmaki instances, multiple Discord servers, and architecture details.
 icon: server
 ---
 
@@ -20,7 +20,7 @@ Each channel shows which bot (machine) it's connected to. You can have channels 
 
 ## Running Multiple Instances
 
-By default, Kimaki stores its data in `~/.kimaki`. To run multiple bot instances on the same machine (e.g., for different teams or projects), use a separate `--data-dir` and optionally set `KIMAKI_LOCK_PORT` explicitly:
+By default, shuvmaki stores its data in `~/.kimaki`. To run multiple bot instances on the same machine (e.g., for different teams or projects), use a separate `--data-dir` and optionally set `KIMAKI_LOCK_PORT` explicitly:
 
 ```bash
 # Instance 1 - uses default ~/.kimaki
@@ -43,7 +43,7 @@ This lets you run completely isolated bots on the same machine, each with their 
 
 ## Multiple Discord Servers
 
-A single Kimaki instance can serve multiple Discord servers. Install the bot in each server using the install URL shown during setup, then add project channels to each server.
+A single shuvmaki instance can serve multiple Discord servers. Install the bot in each server using the install URL shown during setup, then add project channels to each server.
 
 ### Method 1: Use `/add-project` command
 
@@ -65,4 +65,4 @@ You can link the same project to channels in multiple servers — both will poin
 
 ## Docker on a VPS
 
-To run Kimaki on a remote machine instead of your laptop, put it in a container with a persistent volume. The first boot prints an install URL in the logs. See [Deploy Kimaki on a VPS with Docker](./docker.mdx).
+To run shuvmaki on a remote machine instead of your laptop, put it in a container with a persistent volume. The first boot prints an install URL in the logs. See [Deploy shuvmaki on a VPS with Docker](./docker.mdx).

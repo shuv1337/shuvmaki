@@ -123,7 +123,7 @@ export const app = new Spiceflow({
       return (
         <>
           <Head>
-            <Head.Title>Kimaki - Setup Error</Head.Title>
+            <Head.Title>shuvmaki - Setup Error</Head.Title>
           </Head>
 
           <main className="flex min-h-screen flex-col items-center justify-center px-6">
@@ -167,10 +167,10 @@ export const app = new Spiceflow({
     return (
       <>
         <Head>
-          <Head.Title>Kimaki Bot Installed</Head.Title>
+          <Head.Title>shuvmaki Bot Installed</Head.Title>
           <Head.Meta
             name="description"
-            content="Kimaki was installed successfully. Return to the terminal to continue onboarding."
+            content="shuvmaki was installed successfully. Return to the terminal to continue onboarding."
           />
         </Head>
 
@@ -321,7 +321,7 @@ export const app = new Spiceflow({
     return (
       <html lang="en">
         <Head>
-          <Head.Title>Kimaki - Connect to Slack</Head.Title>
+          <Head.Title>shuvmaki - Connect to Slack</Head.Title>
           <Head.Meta name="viewport" content="width=device-width, initial-scale=1" />
         </Head>
         <body className="min-h-screen bg-white font-sans text-stone-900 antialiased">

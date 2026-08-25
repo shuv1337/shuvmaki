@@ -148,6 +148,26 @@ describe('hasKimakiBotPermission', () => {
     expect(hasKimakiBotPermission(member, guild)).toBe(false)
   })
 
+  test('allows API interaction member when shuvmaki role exists', () => {
+    const shuvmakiRoleId = '333'
+    const guild = {
+      ownerId: 'owner-id',
+      roles: {
+        cache: new Map([
+          [shuvmakiRoleId, { id: shuvmakiRoleId, name: 'shuvmaki' }],
+        ]),
+      },
+    } as any
+
+    const member = {
+      user: { id: 'member-id' },
+      permissions: '0',
+      roles: [shuvmakiRoleId],
+    } as any
+
+    expect(hasKimakiBotPermission(member, guild)).toBe(true)
+  })
+
   test('allows API interaction member when kimaki role exists', () => {
     const kimakiRoleId = '111'
     const guild = {

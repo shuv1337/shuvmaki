@@ -8,7 +8,7 @@ The **`/mcp`** command lets you list and toggle **MCP (Model Context Protocol) s
 
 ## Using it
 
-Run **`/mcp`** in a project channel. Kimaki shows the configured servers and their status, with a menu to connect or disconnect each one.
+Run **`/mcp`** in a project channel. shuvmaki shows the configured servers and their status, with a menu to connect or disconnect each one.
 
 ```diagram
    /mcp ──▶ list configured MCP servers ──▶ pick one ──▶ connect / disconnect
@@ -19,7 +19,7 @@ Run **`/mcp`** in a project channel. Kimaki shows the configured servers and the
 
 ## Project-scoped, no extra storage
 
-MCP state is **project-scoped** (per channel), not per thread or session. The state lives in **OpenCode's own config**, so toggling from Discord changes the same configuration OpenCode uses everywhere. There's no separate Kimaki database for it.
+MCP state is **project-scoped** (per channel), not per thread or session. The state lives in **OpenCode's own config**, so toggling from Discord changes the same configuration OpenCode uses everywhere. There's no separate shuvmaki database for it.
 
 <Aside>
 <Note>
@@ -29,4 +29,4 @@ MCP servers are configured in your OpenCode config. The `/mcp` command manages t
 
 ## MCP prompts as slash commands
 
-If an MCP server exposes **prompts**, Kimaki registers them as Discord slash commands with the `-mcp-prompt` suffix (for example `/git-commit-mcp-prompt`). See [OpenCode Commands](../features/opencode-commands) for how commands, skills, and MCP prompts map to slash commands.
+If an MCP server exposes **prompts**, shuvmaki registers them as Discord slash commands with the `-mcp-prompt` suffix (for example `/git-commit-mcp-prompt`). See [OpenCode Commands](../features/opencode-commands) for how commands, skills, and MCP prompts map to slash commands.

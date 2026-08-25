@@ -1,6 +1,6 @@
 ---
 title: CI & Automation
-description: Start Kimaki sessions from CI pipelines, cron jobs, or any automation. Includes GitHub Actions examples, scheduled tasks, and per-session permissions.
+description: Start shuvmaki sessions from CI pipelines, cron jobs, or any automation. Includes GitHub Actions examples, scheduled tasks, and per-session permissions.
 icon: workflow
 ---
 
@@ -22,7 +22,7 @@ If you created your own Discord bot, the token is your **Discord bot token** (st
 
 ### Gateway mode
 
-If you're using the shared Kimaki gateway bot (`kimaki --gateway`), the token is a **`clientId:clientSecret`** pair generated during onboarding. It looks like `a1b2c3d4-...:7f8e9d...`. This credential authenticates your kimaki instance against the gateway proxy; it is not a Discord bot token.
+If you're using the shared shuvmaki gateway bot (`kimaki --gateway`), the token is a **`clientId:clientSecret`** pair generated during onboarding. It looks like `a1b2c3d4-...:7f8e9d...`. This credential authenticates your kimaki instance against the gateway proxy; it is not a Discord bot token.
 
 `kimaki bot token` prints the correct value in both modes. Store it as a repository secret and pass it as `KIMAKI_BOT_TOKEN` in CI.
 
@@ -55,7 +55,7 @@ Use either `--channel/--project` (create new thread) or `--thread/--session` (se
 
 ### Example: GitHub Actions on New Issues
 
-This workflow starts a Kimaki session whenever a new issue is opened:
+This workflow starts a shuvmaki session whenever a new issue is opened:
 
 ```yaml
 # .github/workflows/investigate-issues.yml
@@ -69,7 +69,7 @@ jobs:
   investigate:
     runs-on: ubuntu-latest
     steps:
-      - name: Start Kimaki Session
+      - name: Start shuvmaki Session
         env:
           KIMAKI_BOT_TOKEN: ${{ secrets.KIMAKI_BOT_TOKEN }}
         run: |
@@ -83,7 +83,7 @@ jobs:
 
 1. Add `KIMAKI_BOT_TOKEN` to your repository secrets (Settings > Secrets > Actions)
 2. Replace `1234567890123456789` with your Discord channel ID (right-click channel > Copy Channel ID)
-3. Make sure the Kimaki bot is running on your machine
+3. Make sure the shuvmaki bot is running on your machine
 
 ### How It Works
 

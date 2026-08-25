@@ -212,7 +212,7 @@ export function createAuth({ env, baseURL }: { env: Env; baseURL: string }) {
           })
           return failOnboarding(
             kimakiClientId,
-            'Kimaki could not save the bot installation. Please try again.',
+            'shuvmaki could not save the bot installation. Please try again.',
           )
         }
 

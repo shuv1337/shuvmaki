@@ -4,11 +4,11 @@ description: Use every OpenCode model from Discord, including your Claude and Ch
 icon: lucide:key-round
 ---
 
-Kimaki gives you access to **every model OpenCode supports**: Anthropic, OpenAI, Google, and more. You can authenticate with an API key, or use your existing **Claude Pro/Max** and **ChatGPT/Codex** subscriptions via OAuth so you pay nothing extra per token.
+shuvmaki gives you access to **every model OpenCode supports**: Anthropic, OpenAI, Google, and more. You can authenticate with an API key, or use your existing **Claude Pro/Max** and **ChatGPT/Codex** subscriptions via OAuth so you pay nothing extra per token.
 
 ## The `/login` command
 
-Run `/login` in any project channel. Kimaki walks you through a short flow:
+Run `/login` in any project channel. shuvmaki walks you through a short flow:
 
 ```diagram
   /login
@@ -27,9 +27,9 @@ Run `/login` in any project channel. Kimaki walks you through a short flow:
 
 ## Using subscriptions instead of API credits
 
-The reason to choose OAuth is cost. When you log in with **OAuth**, Kimaki authenticates the same way the native CLIs do, so your **subscription covers inference** and per-token costs show as zero.
+The reason to choose OAuth is cost. When you log in with **OAuth**, shuvmaki authenticates the same way the native CLIs do, so your **subscription covers inference** and per-token costs show as zero.
 
-- **Anthropic** — log in with your **Claude Pro or Claude Max** subscription. Kimaki requests the inference scope and treats requests as Claude Code requests, so subscription usage applies.
+- **Anthropic** — log in with your **Claude Pro or Claude Max** subscription. shuvmaki requests the inference scope and treats requests as Claude Code requests, so subscription usage applies.
 - **OpenAI / Codex** — log in with your **ChatGPT** subscription to use Codex models without per-token API billing.
 
 <Aside>
@@ -40,7 +40,7 @@ If you already authenticated OpenCode on this machine (for example with the Open
 
 ## Multiple accounts and rotation
 
-You can store **more than one OAuth account** per provider. When a run hits a rate limit or auth failure, Kimaki automatically **rotates to the next account** so your work keeps going.
+You can store **more than one OAuth account** per provider. When a run hits a rate limit or auth failure, shuvmaki automatically **rotates to the next account** so your work keeps going.
 
 Manage the account pool from the CLI:
 

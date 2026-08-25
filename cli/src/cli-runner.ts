@@ -45,6 +45,7 @@ import {
 import * as orm from 'drizzle-orm'
 import * as dbSchema from './schema.js'
 import { selectResolvedCommand } from './opencode-command.js'
+import { resolveOpencodeCommand } from './opencode.js'
 import {
   Events,
   ChannelType,
@@ -613,10 +614,10 @@ export function isDiscordMemberLookupUnavailable(error: Error): boolean {
 export function formatMemberLookupUnavailableMessage(): string {
   return [
     'Discord member search is unavailable for this bot.',
-    'Most Kimaki features still work. Searching names with `--user` needs Server Members Intent.',
+    'Most shuvmaki features still work. Searching names with `--user` needs Server Members Intent.',
     'Use a Discord user ID or raw mention with the same `--user` flag instead:',
-    `  kimaki send --channel <channelId> --prompt '...' --user 535922349652836367`,
-    `  kimaki send --channel <channelId> --prompt '...' --user '<@535922349652836367>'`,
+    `  shuvmaki send --channel <channelId> --prompt '...' --user 535922349652836367`,
+    `  shuvmaki send --channel <channelId> --prompt '...' --user '<@535922349652836367>'`,
   ].join('\n')
 }
 
@@ -1328,11 +1329,11 @@ export async function resolveCredentials({
     : await (async () => {
         const choice = await select({
           message:
-            'How do you want to connect to Discord?\n\nGateway: uses Kimaki\'s pre-built bot — no setup, instant. Self-hosted: you create your own Discord bot at discord.com/developers.',
+            'How do you want to connect to Discord?\n\nGateway: uses the upstream kimaki hosted bot — no setup, instant. Self-hosted: you create your own Discord bot named shuvmaki at discord.com/developers.',
           options: [
             {
               value: 'gateway' as const,
-              label: 'Gateway (pre-built Kimaki bot, no setup needed)',
+              label: 'Gateway (upstream kimaki hosted bot, no setup needed)',
             },
             {
               value: 'self_hosted' as const,
@@ -1378,7 +1379,7 @@ export async function resolveCredentials({
 
     if (isInteractive) {
       note(
-        `Open this URL to install the Kimaki bot in your Discord server:\n\n${oauthUrl}\n\nDo not share this URL with anyone — it contains your credentials.\n\nIf you don't have a server, create one first (+ button in the Discord sidebar).`,
+        `Open this URL to install the Discord bot in your server:\n\n${oauthUrl}\n\nDo not share this URL with anyone — it contains your credentials.\n\nIf you don't have a server, create one first (+ button in the Discord sidebar).`,
         'Install Bot',
       )
 
@@ -1493,7 +1494,7 @@ export async function resolveCredentials({
   note(
     '1. Go to https://discord.com/developers/applications\n' +
       '2. Click "New Application"\n' +
-      '3. Give your application a name',
+      '3. Give your application a name (shuvmaki is a good name)',
     'Step 1: Create Discord Application',
   )
 
@@ -1579,6 +1580,15 @@ export async function run({
   const forceRestartOnboarding = Boolean(restartOnboarding)
   const forceGateway = Boolean(gateway)
 
+  // Prefer a resolved shuvcode/opencode binary so we skip installing upstream
+  // opencode when this fork's CLI is already available.
+  if (!process.env.OPENCODE_PATH) {
+    const resolved = resolveOpencodeCommand()
+    if (path.isAbsolute(resolved)) {
+      process.env.OPENCODE_PATH = resolved
+    }
+  }
+
   // Step 0: Ensure opencode and bun are installed
   await Promise.all([
     ensureCommandAvailable({
@@ -1587,12 +1597,17 @@ export async function run({
       installUnix: 'curl -fsSL https://opencode.ai/install | bash',
       installWindows: 'irm https://opencode.ai/install.ps1 | iex',
       possiblePathsUnix: [
+        '~/.bun/bin/shuvcode',
+        '~/.local/bin/shuvcode',
+        '/usr/local/bin/shuvcode',
         '~/.local/bin/opencode',
         '~/.opencode/bin/opencode',
         '/usr/local/bin/opencode',
         '/opt/opencode/bin/opencode',
       ],
       possiblePathsWindows: [
+        '~\\.bun\\bin\\shuvcode.exe',
+        '~\\.local\\bin\\shuvcode.exe',
         '~\\.local\\bin\\opencode.exe',
         '~\\AppData\\Local\\opencode\\opencode.exe',
         '~\\.opencode\\bin\\opencode.exe',
@@ -1881,7 +1896,7 @@ export async function run({
 
     if (!hasConfiguredTextChannels) {
       note(
-        'No Kimaki project channels are configured yet. Opening project/channel setup.',
+        'No shuvmaki project channels are configured yet. Opening project/channel setup.',
         'Channel Setup',
       )
     }
@@ -1895,7 +1910,7 @@ export async function run({
         )
         .join('\n')
 
-      note(channelList, 'Existing Kimaki Channels')
+      note(channelList, 'Existing shuvmaki Channels')
     }
 
     // Wait for OpenCode, fetch projects, show prompts, create channels if needed

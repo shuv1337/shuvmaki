@@ -330,8 +330,8 @@ describe('kimaki send --channel thread creation', () => {
         "--- from: user (cli-send-tester)
         --- from: assistant (TestBot)
         I can see you sent a message, but Discord did not include its text.
-        Mention me and send it again, like \`@Kimaki fix the failing test\`, so I can read it.
-        To avoid this reminder, start Kimaki with \`--mention-mode\` so it only reacts to mentioned messages."
+        Mention me and send it again, like \`@shuvmaki fix the failing test\`, so I can read it.
+        To avoid this reminder, start shuvmaki with \`--mention-mode\` so it only reacts to mentioned messages."
       `)
 
       const threads = await discord.channel(EMPTY_CONTENT_CHANNEL_ID).getThreads()
@@ -416,8 +416,8 @@ describe('kimaki send --channel thread creation', () => {
         --- from: user (cli-send-tester)
         --- from: assistant (TestBot)
         I can see you sent a message, but Discord did not include its text.
-        Mention me and send it again, like \`@Kimaki fix the failing test\`, so I can read it.
-        To avoid this reminder, start Kimaki with \`--mention-mode\` so it only reacts to mentioned messages."
+        Mention me and send it again, like \`@shuvmaki fix the failing test\`, so I can read it.
+        To avoid this reminder, start shuvmaki with \`--mention-mode\` so it only reacts to mentioned messages."
       `)
     },
     12_000,

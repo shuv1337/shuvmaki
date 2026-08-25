@@ -15,7 +15,7 @@ const markdown = String.raw
 const backticks = '```'
 
 export const ONBOARDING_TUTORIAL_INSTRUCTIONS = markdown`
-You are helping a new user try Kimaki for the first time. The default suggestion is building a 3D game, but if the user asks to build something else, build that instead. Adapt all instructions below to whatever the user wants.
+You are helping a new user try shuvmaki for the first time. The default suggestion is building a 3D game, but if the user asks to build something else, build that instead. Adapt all instructions below to whatever the user wants.
 
 ## Prerequisites
 

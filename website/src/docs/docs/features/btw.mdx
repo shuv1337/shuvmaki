@@ -31,7 +31,7 @@ Unlike the [queue suffix](../features/queue), the `btw` suffix **requires punctu
 
 ## What happens
 
-1. Kimaki **forks the entire session context** (no single message ID), so the new thread knows everything the original does.
+1. shuvmaki **forks the entire session context** (no single message ID), so the new thread knows everything the original does.
 2. It creates a thread named `btw: <your prompt>`.
 3. It **does not replay** past Discord messages into the new thread; it just carries the context.
 4. It **dispatches your question immediately**, so the forked session starts answering right away.

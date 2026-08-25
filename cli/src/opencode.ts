@@ -455,13 +455,49 @@ function ensureProcessCleanupHandlersRegistered(): void {
 //
 // Resolution order:
 // 1. OPENCODE_PATH env var (explicit user override)
-// 2. `which opencode` / `where opencode` (system PATH)
-// 3. Fall back to bare "opencode" (spawn will fail with a clear error)
+// 2. `which shuvcode` then `which opencode` (prefer this fork's CLI)
+// 3. Common install locations for shuvcode, then opencode
+// 4. Fall back to bare "opencode" (spawn will fail with a clear error)
 //
-// OpenCode must be installed globally before running kimaki. The bot startup
-// checks for it via ensureCommandAvailable and prompts to install if missing.
+// OpenCode/shuvcode must be installed globally before running shuvmaki. The bot
+// startup checks for it via ensureCommandAvailable and prompts to install if missing.
 
 let resolvedOpencodeCommand: string | null = null
+
+function tryWhichCommand(name: string): string | null {
+  const isWindows = process.platform === 'win32'
+  const whichCmd = isWindows ? 'where' : 'which'
+  const result = errore.try(
+    () => {
+      const commandOutput = execFileSync(whichCmd, [name], {
+        encoding: 'utf8',
+        timeout: 5000,
+      })
+      const resolved = selectResolvedCommand({
+        output: commandOutput,
+        isWindows,
+      })
+      if (resolved) {
+        return resolved
+      }
+      throw new Error(`${name} not found in PATH`)
+    },
+    () => new Error(`${name} not found in PATH`),
+  )
+  if (result instanceof Error) {
+    return null
+  }
+  return result
+}
+
+function tryExecutablePath(filePath: string): string | null {
+  try {
+    fs.accessSync(filePath, fs.constants.X_OK)
+    return filePath
+  } catch {
+    return null
+  }
+}
 
 export function resolveOpencodeCommand(): string {
   if (resolvedOpencodeCommand) {
@@ -480,36 +516,48 @@ export function resolveOpencodeCommand(): string {
     }
   }
 
-  const isWindows = process.platform === 'win32'
-  const whichCmd = isWindows ? 'where' : 'which'
-  const result = errore.try(
-    () => {
-      const commandOutput = execFileSync(whichCmd, ['opencode'], {
-        encoding: 'utf8',
-        timeout: 5000,
-      })
-      const resolved = selectResolvedCommand({
-        output: commandOutput,
-        isWindows,
-      })
-      if (resolved) {
-        return resolved
-      }
-      throw new Error('opencode not found in PATH')
-    },
-    () => new Error('opencode not found in PATH'),
-  )
-
-  if (result instanceof Error) {
-    // Fall back to bare command name — spawn will fail with a clear error
-    // if it can't find the binary.
-    opencodeLogger.warn('Could not resolve opencode path via which, falling back to "opencode"')
-    return 'opencode'
+  for (const name of ['shuvcode', 'opencode'] as const) {
+    const resolved = tryWhichCommand(name)
+    if (resolved) {
+      resolvedOpencodeCommand = resolved
+      opencodeLogger.log(`Resolved opencode binary: ${resolved}`)
+      return resolved
+    }
   }
 
-  resolvedOpencodeCommand = result
-  opencodeLogger.log(`Resolved opencode binary: ${result}`)
-  return result
+  const home = process.env.HOME || process.env.USERPROFILE || ''
+  const extraPaths: string[] = [
+    path.join(home, '.bun', 'bin', 'shuvcode'),
+    path.join(home, '.local', 'bin', 'shuvcode'),
+    path.join('/usr', 'local', 'bin', 'shuvcode'),
+    path.join(home, '.bun', 'bin', 'opencode'),
+    path.join(home, '.local', 'bin', 'opencode'),
+    path.join(home, '.opencode', 'bin', 'opencode'),
+    path.join('/usr', 'local', 'bin', 'opencode'),
+    path.join('/opt', 'opencode', 'bin', 'opencode'),
+  ]
+  if (process.platform === 'win32') {
+    extraPaths.push(
+      path.join(home, '.local', 'bin', 'shuvcode.exe'),
+      path.join(home, '.bun', 'bin', 'shuvcode.exe'),
+      path.join(home, '.local', 'bin', 'opencode.exe'),
+      path.join(home, 'AppData', 'Local', 'opencode', 'opencode.exe'),
+      path.join(home, '.opencode', 'bin', 'opencode.exe'),
+    )
+  }
+  for (const extraPath of extraPaths) {
+    const resolved = tryExecutablePath(extraPath)
+    if (resolved) {
+      resolvedOpencodeCommand = resolved
+      opencodeLogger.log(`Resolved opencode binary: ${resolved}`)
+      return resolved
+    }
+  }
+
+  opencodeLogger.warn(
+    'Could not resolve shuvcode/opencode path via which, falling back to "opencode"',
+  )
+  return 'opencode'
 }
 async function getOpenPort(): Promise<number> {
   return new Promise((resolve, reject) => {

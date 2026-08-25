@@ -1,10 +1,10 @@
 ---
 title: Message Handling
-description: How Discord messages are delivered into an OpenCode session, and how Kimaki turns a message into an interrupt.
+description: How Discord messages are delivered into an OpenCode session, and how shuvmaki turns a message into an interrupt.
 icon: lucide:message-square
 ---
 
-When you send a message to an active session, Kimaki has to decide **when** the agent sees it. This page explains the delivery model and the interrupt behavior that makes a mid-run message actually stop the agent.
+When you send a message to an active session, shuvmaki has to decide **when** the agent sees it. This page explains the delivery model and the interrupt behavior that makes a mid-run message actually stop the agent.
 
 ## The default: queue after the current step
 
@@ -24,7 +24,7 @@ This is fine for quick steps. But if the current step is a **long-running comman
 
 ## The interrupt: abort after ~3 seconds
 
-Kimaki adds an interrupt on top. If your message has not started being processed within about **3 seconds**, Kimaki **aborts the current step and force-delivers your message**, then resumes the session with it.
+shuvmaki adds an interrupt on top. If your message has not started being processed within about **3 seconds**, shuvmaki **aborts the current step and force-delivers your message**, then resumes the session with it.
 
 ```diagram
   You send message during long run
@@ -40,13 +40,13 @@ The effect: **a message acts as an interrupt**. Instead of waiting behind a slow
 
 <Aside>
 <Note>
-The abort preserves your session's agent and model overrides. Kimaki resends the original message parts after the abort, so nothing about your session config is lost.
+The abort preserves your session's agent and model overrides. shuvmaki resends the original message parts after the abort, so nothing about your session config is lost.
 </Note>
 </Aside>
 
 ## Tuning the timeout
 
-The interrupt timeout defaults to **3000 ms**. Override it with an environment variable when starting Kimaki:
+The interrupt timeout defaults to **3000 ms**. Override it with an environment variable when starting shuvmaki:
 
 ```bash
 KIMAKI_INTERRUPT_STEP_TIMEOUT_MS=8000 npx -y kimaki@latest

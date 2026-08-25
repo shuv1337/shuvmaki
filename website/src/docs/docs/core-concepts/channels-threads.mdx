@@ -1,10 +1,10 @@
 ---
 title: Channels & Threads
-description: How Kimaki maps Discord channels to projects and threads to coding sessions, the core orchestration model.
+description: How shuvmaki maps Discord channels to projects and threads to coding sessions, the core orchestration model.
 icon: lucide:folder-tree
 ---
 
-Kimaki's whole design rests on one mapping: a Discord **channel is a project**, and a **thread is a coding session**. Understanding this makes everything else obvious.
+shuvmaki's whole design rests on one mapping: a Discord **channel is a project**, and a **thread is a coding session**. Understanding this makes everything else obvious.
 
 ```diagram
   Discord                       Your machine
@@ -22,7 +22,7 @@ Kimaki's whole design rests on one mapping: a Discord **channel is a project**, 
 
 Most chat-based agent tools put **everything in one channel**, like an iMessage thread. Sessions stack on top of each other, context bleeds between unrelated tasks, and there is no clean way to find or resume a specific piece of work.
 
-Kimaki partitions work along the two axes that actually matter:
+shuvmaki partitions work along the two axes that actually matter:
 
 - **Projects → channels.** Switch the project you're working on by switching channels.
 - **Sessions → threads.** Switch the task you're working on by switching threads.
@@ -37,7 +37,7 @@ Treat threads like git branches for conversations. One thread per task keeps eac
 
 ## How a channel becomes a project
 
-When you add a project, Kimaki creates a Discord channel and stores the link between that channel and a directory on your machine. The mapping lives in the channel topic as metadata:
+When you add a project, shuvmaki creates a Discord channel and stores the link between that channel and a directory on your machine. The mapping lives in the channel topic as metadata:
 
 ```xml
 <kimaki><directory>/code/web-app</directory><app>bot_id</app></kimaki>
@@ -85,4 +85,4 @@ Sessions you start outside Discord (OpenCode CLI or TUI) can also appear as thre
 
 ## One server per machine, many channels
 
-A single Kimaki instance runs on one machine and can serve **many channels across many Discord servers**. Each channel points at a directory on the machine where the bot runs. To control more machines, run Kimaki on each and add their channels to the same server. See [Advanced Setup](../guides/advanced-setup) for multi-machine and multi-server layouts.
+A single shuvmaki instance runs on one machine and can serve **many channels across many Discord servers**. Each channel points at a directory on the machine where the bot runs. To control more machines, run shuvmaki on each and add their channels to the same server. See [Advanced Setup](../guides/advanced-setup) for multi-machine and multi-server layouts.

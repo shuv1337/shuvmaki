@@ -93,8 +93,8 @@ function buildLinuxDesktop({
   return `[Desktop Entry]
 Type=Application
 Version=1.0
-Name=Kimaki
-Comment=Kimaki Discord Bot Daemon
+Name=shuvmaki
+Comment=shuvmaki Discord Bot Daemon
 Exec=${execLine}
 StartupNotify=false
 Terminal=false

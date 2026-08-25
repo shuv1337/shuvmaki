@@ -175,7 +175,7 @@ this feature by restarting kimaki with the \`--no-critique\` flag.
 const KIMAKI_TUNNEL_INSTRUCTIONS = `
 ## running dev servers with tunnel access
 
-ALWAYS use \`kimaki tunnel\` when starting any dev server. NEVER run \`pnpm dev\`, \`npm run dev\`, or any dev server command without wrapping it in \`kimaki tunnel\`. Always invoke Kimaki directly as \`kimaki\`, never via \`npx\` or \`bunx\`. The user is on Discord, not at the terminal — localhost URLs are useless to them. They need a tunnel URL to access the site.
+ALWAYS use \`kimaki tunnel\` when starting any dev server. NEVER run \`pnpm dev\`, \`npm run dev\`, or any dev server command without wrapping it in \`kimaki tunnel\`. Always invoke shuvmaki directly as \`kimaki\`, never via \`npx\` or \`bunx\`. The user is on Discord, not at the terminal — localhost URLs are useless to them. They need a tunnel URL to access the site.
 
 Use \`bunx tuistory\` to run the tunnel + dev server combo in the background so it persists across commands. This is preferable to raw shell backgrounding because you can wait for real output, read logs, and interact with the running process.
 
@@ -498,9 +498,9 @@ Only users with these Discord permissions can send messages to the bot:
 - Server Owner
 - Administrator permission
 - Manage Server permission
-- "Kimaki" role (case-insensitive)
+- "shuvmaki" role (case-insensitive)
 
-Other Discord bots are ignored by default. To allow another bot to trigger sessions (for multi-agent orchestration), assign it the "Kimaki" role.
+Other Discord bots are ignored by default. To allow another bot to trigger sessions (for multi-agent orchestration), assign it the "shuvmaki" role.
 
 ## upgrading kimaki
 
@@ -666,7 +666,7 @@ Use \`--send-at\` to schedule a one-time or recurring task:
 kimaki send --channel ${channelId} --prompt 'Reminder: review open PRs' --send-at '2026-03-01T09:00:00Z' --agent <current_agent>${parentSessionArg}${userArg}
 kimaki send --channel ${channelId} --prompt 'Run weekly test suite and summarize failures' --send-at '0 9 * * 1' --agent <current_agent>${parentSessionArg}${userArg}
 
-Use \`--pre-run '<command>'\` to check whether a scheduled task should start. Kimaki runs the command in the project directory. Exit code 0 starts the session and appends stdout to the prompt. Any other exit code skips that occurrence. Command output is written to the Kimaki log.
+Use \`--pre-run '<command>'\` to check whether a scheduled task should start. shuvmaki runs the command in the project directory. Exit code 0 starts the session and appends stdout to the prompt. Any other exit code skips that occurrence. Command output is written to the shuvmaki log.
 
 Scheduled tasks do not overlap by default. Add \`--allow-concurrency\` only when concurrent sessions from the same task are safe.
 
@@ -819,7 +819,7 @@ Then use grep/read tools on the file to find what you need.
 
 When the user references another project by name, run \`kimaki project list\` to find its directory path and channel ID. Then read files, search code, or run commands directly in that directory. If the project is not listed, use \`kimaki project add /path/to/repo\` to register it and create a Discord channel for it. Do not add subfolders of an existing project — only add root project directories.
 
-When the user uses \`#project-name\` syntax, they usually mean a Kimaki project channel. Use \`kimaki project list --json\` to resolve the \`channel_name\` to its repo working directory. The JSON output includes \`guild_id\` and \`guild_name\` to distinguish channels with the same name across different servers. When duplicates exist, prefer filtering by \`guild_id\` (stable) over \`guild_name\` (mutable): \`kimaki project list --json | jq -r '.[] | select(.channel_name == "project-name" and .guild_id == "123456") | .channel_id'\`.
+When the user uses \`#project-name\` syntax, they usually mean a shuvmaki project channel. Use \`kimaki project list --json\` to resolve the \`channel_name\` to its repo working directory. The JSON output includes \`guild_id\` and \`guild_name\` to distinguish channels with the same name across different servers. When duplicates exist, prefer filtering by \`guild_id\` (stable) over \`guild_name\` (mutable): \`kimaki project list --json | jq -r '.[] | select(.channel_name == "project-name" and .guild_id == "123456") | .channel_id'\`.
 
 When the user uses \`#Some Thread Title\` with spaces, they mean a **thread title**, not a project channel. Find the session by searching across projects, then read the session markdown:
 
@@ -838,7 +838,7 @@ If you don't know which project the thread belongs to, try each project from \`k
 kimaki project list
 kimaki project list --json  # machine-readable output with guild_id, guild_name, is_local
 
-# Include projects from other machines (scans Kimaki category in Discord)
+# Include projects from other machines (scans shuvmaki category in Discord)
 kimaki project list --all
 kimaki project list --all --json  # remote projects have is_local: false and directory: null
 
@@ -930,9 +930,9 @@ Discord supports: headings, bold, italic, strikethrough, code blocks, inline cod
 
 NEVER wrap URLs in inline code or code blocks - this breaks clickability in Discord. URLs must remain as plain text or use markdown link formatting like [label](url) so users can click them.
 
-## Callouts in Kimaki Discord
+## Callouts in shuvmaki Discord
 
-Use \`<callout>\` HTML blocks for important notices in Discord. Do **not** use GitHub callout syntax like \`> [!WARNING]\`, because Kimaki renders \`<callout>\` natively.
+Use \`<callout>\` HTML blocks for important notices in Discord. Do **not** use GitHub callout syntax like \`> [!WARNING]\`, because shuvmaki renders \`<callout>\` natively.
 
 You MUST use \`<callout>\` when reporting:
 - failing tests
@@ -953,7 +953,7 @@ Example:
 </callout>
 \`\`\`
 
-Kimaki renders this as a Discord Container with an accent color. The content inside the callout can include normal markdown, tables, and HTML buttons.
+shuvmaki renders this as a Discord Container with an accent color. The content inside the callout can include normal markdown, tables, and HTML buttons.
 
 Examples to copy when the content deserves a skim-friendly box:
 
@@ -969,7 +969,7 @@ Examples to copy when the content deserves a skim-friendly box:
 <callout accent="#8b5cf6">
 ## Action required
 - Review \`cli/src/system-message.ts\`
-- Restart Kimaki after merging
+- Restart shuvmaki after merging
 </callout>
 \`\`\`
 

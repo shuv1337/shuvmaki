@@ -24,7 +24,7 @@ import { InstallCommand } from './install-command.tsx'
 import { StradaBrowser } from '../strada-browser.tsx'
 import { VideoBackgroundShader } from '@holocron.so/vite/mdx'
 
-const GITHUB_URL = 'https://github.com/remorses/kimaki'
+const GITHUB_URL = 'https://github.com/shuv1337/shuvmaki'
 const DISCORD_URL = 'https://discord.gg/qz3hapKcMM'
 
 export function HeroSection() {

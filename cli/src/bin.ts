@@ -32,7 +32,7 @@ const isHelpFlag = process.argv.includes('--help')
 if (process.env.__KIMAKI_CHILD || isSubcommand || isHelpFlag) {
   await import('./cli.js')
 } else {
-  console.error('no subcommand detected. kimaki will automatically restart on crash')
+  console.error('no subcommand detected. shuvmaki will automatically restart on crash')
   console.error()
   const EXIT_NO_RESTART = 64
   // Keep in sync with EXIT_TEMPFAIL in cli-runner.ts. Network-down login

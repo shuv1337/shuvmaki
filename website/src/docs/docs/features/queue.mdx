@@ -4,11 +4,11 @@ description: Queue a message to send when the current run finishes, something pl
 icon: lucide:list-plus
 ---
 
-The **queue** lets you line up a message to be delivered **when the current run finishes**, instead of interrupting it. Plain OpenCode has no way to do this; Kimaki tracks the queue itself.
+The **queue** lets you line up a message to be delivered **when the current run finishes**, instead of interrupting it. Plain OpenCode has no way to do this; shuvmaki tracks the queue itself.
 
 ## Why queue instead of just sending
 
-A normal message during a run [acts as an interrupt](../core-concepts/message-handling): after ~3 seconds Kimaki aborts the current step to deliver it. The queue is the opposite: it **waits politely** for the run to complete, then sends.
+A normal message during a run [acts as an interrupt](../core-concepts/message-handling): after ~3 seconds shuvmaki aborts the current step to deliver it. The queue is the opposite: it **waits politely** for the run to complete, then sends.
 
 This is perfect for follow-ups that only make sense after the work is done:
 
@@ -28,7 +28,7 @@ Two ways to queue, both identical in effect:
 - **`/queue <message>`** — queues the given text.
 - **`. queue` suffix** — end any message with a punctuation mark plus `queue` and it gets queued automatically. Supported forms include `. queue`, `! queue`, `? queue`, a trailing `queue.`, or `queue` on its own final line.
 
-If the session is **busy**, the message waits and Kimaki replies with its queue position. If the session is already **idle**, it dispatches immediately.
+If the session is **busy**, the message waits and shuvmaki replies with its queue position. If the session is already **idle**, it dispatches immediately.
 
 <Aside>
 <Tip>
@@ -47,7 +47,7 @@ No need to clear and re-add. Just edit in place while it's still waiting.
 
 ## When a queued message is sent
 
-Once the run finishes, Kimaki dispatches the queued message and shows it in the thread as:
+Once the run finishes, shuvmaki dispatches the queued message and shows it in the thread as:
 
 ```
 » Tommy: commit everything with a descriptive message

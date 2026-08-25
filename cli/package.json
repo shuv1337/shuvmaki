@@ -1,5 +1,6 @@
 {
   "name": "kimaki",
+  "description": "shuvmaki Discord bot for OpenCode coding agents",
   "module": "index.ts",
   "type": "module",
   "version": "0.26.0",
@@ -19,7 +20,7 @@
     "format": "oxfmt src",
     "sync-skills": "tsx scripts/sync-skills.ts"
   },
-  "repository": "https://github.com/remorses/kimaki",
+  "repository": "https://github.com/shuv1337/shuvmaki",
   "bin": "bin.js",
   "exports": {
     "./package.json": "./package.json",

@@ -80,9 +80,46 @@ export function generateBotInstallUrl({
   return url.toString()
 }
 
-export const KIMAKI_GATEWAY_APP_ID =
-  process.env.KIMAKI_GATEWAY_APP_ID || '1477605701202481173'
-export const KIMAKI_WEBSITE_URL = process.env.KIMAKI_WEBSITE_URL || 'https://kimaki.dev'
+export const DEFAULT_KIMAKI_GATEWAY_APP_ID = '1477605701202481173'
+export const DEFAULT_KIMAKI_WEBSITE_URL = 'https://kimaki.dev'
+export const DEFAULT_KIMAKI_GATEWAY_PROXY_URL = 'wss://discord-gateway.kimaki.dev'
+
+function normalizeWebsiteUrl(url: string): string {
+  return url.replace(/\/+$/, '')
+}
+
+// When KIMAKI_WEBSITE_URL is still the kimaki.dev default, keep the hosted
+// kimaki.dev bot Application ID so existing gateway mode keeps working.
+// When the operator points the CLI at a self-hosted onboarding host
+// (for example https://kimaki.exe.xyz), do not fall back to that bot:
+// KIMAKI_GATEWAY_APP_ID must be the operator's Discord Application ID.
+export function resolveKimakiGatewayAppId({
+  gatewayAppId,
+  websiteUrl,
+}: {
+  gatewayAppId: string | undefined
+  websiteUrl: string | undefined
+}): string {
+  if (gatewayAppId) {
+    return gatewayAppId
+  }
+  if (
+    websiteUrl &&
+    normalizeWebsiteUrl(websiteUrl) !== normalizeWebsiteUrl(DEFAULT_KIMAKI_WEBSITE_URL)
+  ) {
+    return ''
+  }
+  return DEFAULT_KIMAKI_GATEWAY_APP_ID
+}
+
+export const KIMAKI_GATEWAY_APP_ID = resolveKimakiGatewayAppId({
+  gatewayAppId: process.env.KIMAKI_GATEWAY_APP_ID,
+  websiteUrl: process.env.KIMAKI_WEBSITE_URL,
+})
+export const KIMAKI_WEBSITE_URL = process.env.KIMAKI_WEBSITE_URL || DEFAULT_KIMAKI_WEBSITE_URL
+
+export const MISSING_KIMAKI_GATEWAY_APP_ID_MESSAGE =
+  'KIMAKI_GATEWAY_APP_ID is required. Set it to the Discord Application ID of your gateway bot. When KIMAKI_WEBSITE_URL is not https://kimaki.dev the CLI will not fall back to the kimaki.dev bot.'
 
 export function generateDiscordInstallUrlForBot({
   appId,

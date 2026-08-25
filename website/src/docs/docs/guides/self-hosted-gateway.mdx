@@ -1,0 +1,84 @@
+---
+$schema: https://holocron.so/frontmatter.json
+title: Self-hosted Discord gateway
+sidebarTitle: Self-hosted gateway
+description: Run the Discord gateway-proxy and onboarding on kimaki.exe.xyz instead of kimaki.dev.
+icon: lucide:server
+prompt: |
+  Follow-up on the same shuvmaki branch/PR: add a self-hosted shuvmaki
+  gateway stack (docs + compose/config only, no secrets, do not register a
+  Discord app). Goal: run OUR Discord-gateway-proxy + onboarding on exe.dev
+  (kimaki.exe.xyz), not kimaki.dev. CLI honors KIMAKI_WEBSITE_URL,
+  KIMAKI_GATEWAY_APP_ID, KIMAKI_GATEWAY_PROXY_URL. --gateway opens
+  /discord-install, polls /api/onboarding/status, IDENTIFYs as
+  clientId:clientSecret. gateway-proxy submodule remorses/gateway-proxy
+  branch multi-client-support. Config token or TOKEN, intents 32511, port
+  7878, externally_accessible_url. DB gateway_clients (client_id, secret,
+  guild_id). Document Kyle secrets and redirect URI. Public key not
+  required. Message Content Intent required. Do not hardcode secrets. Do
+  not default KIMAKI_GATEWAY_APP_ID to the kimaki.dev bot if changing
+  defaults. @deploy/shuvmaki-gateway/readme.md @cli/src/utils.ts
+  @cli/src/cli-runner.ts @website/src/auth.ts @website/src/server.tsx
+  @gateway-proxy/README.md @db/schema.prisma
+---
+
+Run **your** Discord gateway-proxy and onboarding HTTP on a VM (exe.dev /
+`kimaki.exe.xyz`) instead of sending `kimaki --gateway` at kimaki.dev.
+
+Compose, env placeholders, and the onboarding server live in
+[`deploy/shuvmaki-gateway/`](https://github.com/shuv1337/shuvmaki/tree/main/deploy/shuvmaki-gateway).
+That directory does not register a Discord app and does not ship tokens.
+
+## Discord secrets (operator)
+
+Create a Discord application named **shuvmaki**. Paste these into
+`deploy/shuvmaki-gateway/.env`. Public Key is not required.
+
+| Secret | Discord Developer Portal |
+|---|---|
+| Bot token | Bot → Token |
+| OAuth client id | OAuth2 → Client ID |
+| OAuth client secret | OAuth2 → Client Secret |
+| Application id | General Information → Application ID |
+
+Redirect URI (exact):
+
+```
+https://kimaki.exe.xyz/api/auth/callback/discord
+```
+
+Enable **Message Content Intent**. The proxy IDENTIFY bitfield in the example
+compose is `65279` (`32511 | 32768`) so message bodies are not stripped.
+
+## CLI env
+
+```bash
+export KIMAKI_WEBSITE_URL=https://kimaki.exe.xyz
+export KIMAKI_GATEWAY_PROXY_URL=wss://discord-gateway.kimaki.exe.xyz
+export KIMAKI_GATEWAY_APP_ID=<your Discord Application ID>
+```
+
+`KIMAKI_GATEWAY_APP_ID` is **required** when the website URL is not
+`https://kimaki.dev`. The CLI will not fall back to the kimaki.dev bot id.
+
+Then run `kimaki --gateway`. The CLI still generates `clientId`/`clientSecret`,
+opens `/discord-install`, polls `/api/onboarding/status`, and IDENTIFYs to the
+proxy as `clientId:clientSecret`.
+
+## What the VM must serve
+
+If you do not use the bundled onboarding container, the public website origin
+must still implement:
+
+- `GET /discord-install`
+- `GET /api/auth/callback/discord`
+- `GET /api/onboarding/status`
+- `GET /install-success`
+
+The Cloudflare Worker in `website/` can do that, but it needs
+`DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, `AUTH_SECRET`, Postgres/Hyperdrive,
+and KV. The VM Node server in `deploy/shuvmaki-gateway/onboarding/` is the
+small alternative.
+
+See [`deploy/shuvmaki-gateway/readme.md`](https://github.com/shuv1337/shuvmaki/blob/main/deploy/shuvmaki-gateway/readme.md)
+for compose, TLS, intents, and the `gateway_clients` table.

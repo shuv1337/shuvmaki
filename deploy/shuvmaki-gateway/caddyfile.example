@@ -1,0 +1,15 @@
+# TLS terminator for exe.dev / kimaki.exe.xyz.
+# Discord OAuth redirect URIs must be https (except localhost).
+# Point DNS:
+#   kimaki.exe.xyz                 -> this Caddy host -> onboarding :8080
+#   discord-gateway.kimaki.exe.xyz -> this Caddy host -> gateway-proxy :7878
+# WebSocket upgrade is required on the gateway host. CLI REST calls the same
+# host over https (KIMAKI_GATEWAY_PROXY_URL wss is swapped to https).
+
+kimaki.exe.xyz {
+	reverse_proxy onboarding:8080
+}
+
+discord-gateway.kimaki.exe.xyz {
+	reverse_proxy gateway-proxy:7878
+}

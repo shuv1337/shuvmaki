@@ -89,7 +89,7 @@ pnpm --filter kimaki dev
 The setup wizard gives you two options:
 
 - **Self-hosted mode**: create your own Discord bot at [discord.com/developers](https://discord.com/developers/applications) and name it **shuvmaki**. Useful if you want the shuvmaki bot identity.
-- **Gateway mode**: uses the upstream kimaki hosted Discord bot. No Discord Developer Portal setup needed. The live kimaki gateway is unchanged.
+- **Gateway mode**: uses a shared Discord bot through a gateway-proxy. Default CLI env still points at kimaki.dev. To run the proxy and onboarding on **kimaki.exe.xyz**, see [`deploy/shuvmaki-gateway/`](deploy/shuvmaki-gateway/readme.md).
 
 Both modes work identically after setup. Keep the CLI running; it's the bridge between Discord and your machine.
 

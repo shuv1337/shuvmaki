@@ -90,6 +90,7 @@
           "docs/guides/ci-automation",
           "docs/guides/advanced-setup",
           "docs/guides/docker",
+          "docs/guides/self-hosted-gateway",
           "docs/guides/programmatic-gateway"
         ]
       },

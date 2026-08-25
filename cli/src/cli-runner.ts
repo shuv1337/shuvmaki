@@ -18,8 +18,11 @@ import {
   deduplicateByKey,
   generateBotInstallUrl,
   generateDiscordInstallUrlForBot,
+  DEFAULT_KIMAKI_GATEWAY_PROXY_URL,
+  DEFAULT_KIMAKI_WEBSITE_URL,
   KIMAKI_GATEWAY_APP_ID,
   KIMAKI_WEBSITE_URL,
+  MISSING_KIMAKI_GATEWAY_APP_ID_MESSAGE,
   abbreviatePath,
 } from './utils.js'
 import {
@@ -84,10 +87,12 @@ export const cliLogger = createLogger(LogPrefix.CLI)
 // KIMAKI_WEBSITE_URL is the website that handles OAuth callback + onboarding status.
 // KIMAKI_GATEWAY_PROXY_URL is the gateway-proxy base URL.
 // We derive REST base from this URL by swapping ws/wss to http/https.
-// These are hardcoded because they're deploy-time constants for the gateway infrastructure.
+// Defaults still point at kimaki.dev. Override with KIMAKI_* env to use a
+// self-hosted stack (see deploy/shuvmaki-gateway/). When KIMAKI_WEBSITE_URL is
+// customized, KIMAKI_GATEWAY_APP_ID is required and does not fall back to the
+// kimaki.dev bot.
 export const KIMAKI_GATEWAY_PROXY_URL =
-  process.env.KIMAKI_GATEWAY_PROXY_URL ||
-  'wss://discord-gateway.kimaki.dev'
+  process.env.KIMAKI_GATEWAY_PROXY_URL || DEFAULT_KIMAKI_GATEWAY_PROXY_URL
 
 export const KIMAKI_GATEWAY_PROXY_REST_BASE_URL = getGatewayProxyRestBaseUrl({
   gatewayUrl: KIMAKI_GATEWAY_PROXY_URL,
@@ -706,9 +711,7 @@ export async function resolveGatewayInstallCredentials(): Promise<
   Error | { clientId: string; clientSecret: string; createdNow: boolean }
 > {
   if (!KIMAKI_GATEWAY_APP_ID) {
-    return new Error(
-      'Gateway mode is not available yet. KIMAKI_GATEWAY_APP_ID is not configured.',
-    )
+    return new Error(MISSING_KIMAKI_GATEWAY_APP_ID_MESSAGE)
   }
 
   const db = await getDb()
@@ -1351,10 +1354,19 @@ export async function resolveCredentials({
   // ── Gateway mode flow ──
   if (modeChoice === 'gateway') {
     if (!KIMAKI_GATEWAY_APP_ID) {
-      cliLogger.error(
-        'Gateway mode is not available yet. KIMAKI_GATEWAY_APP_ID is not configured.',
-      )
+      cliLogger.error(MISSING_KIMAKI_GATEWAY_APP_ID_MESSAGE)
       process.exit(EXIT_NO_RESTART)
+    }
+
+    if (
+      process.env.KIMAKI_WEBSITE_URL &&
+      process.env.KIMAKI_WEBSITE_URL.replace(/\/+$/, '') !==
+        DEFAULT_KIMAKI_WEBSITE_URL &&
+      !process.env.KIMAKI_GATEWAY_PROXY_URL
+    ) {
+      cliLogger.warn(
+        `KIMAKI_WEBSITE_URL is customized but KIMAKI_GATEWAY_PROXY_URL still defaults to ${DEFAULT_KIMAKI_GATEWAY_PROXY_URL}. Set KIMAKI_GATEWAY_PROXY_URL to your proxy (for example wss://discord-gateway.kimaki.exe.xyz).`,
+      )
     }
 
     const gatewayCredentials = await resolveGatewayInstallCredentials()

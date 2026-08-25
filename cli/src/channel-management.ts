@@ -79,6 +79,7 @@ export async function ensureKimakiCategory(
   const categoryNames = isDefaultBotName
     ? ['shuvmaki', 'kimaki']
     : [`shuvmaki ${botName}`, `Kimaki ${botName}`]
+  const createdCategoryName = categoryNames[0] ?? 'shuvmaki'
 
   const existingCategory = guild.channels.cache.find(
     (channel): channel is CategoryChannel => {
@@ -96,7 +97,7 @@ export async function ensureKimakiCategory(
   }
 
   return guild.channels.create({
-    name: categoryNames[0],
+    name: createdCategoryName,
     type: ChannelType.GuildCategory,
   })
 }
@@ -112,6 +113,7 @@ export async function ensureKimakiAudioCategory(
   const categoryNames = isDefaultBotName
     ? ['shuvmaki Audio', 'Kimaki Audio']
     : [`shuvmaki Audio ${botName}`, `Kimaki Audio ${botName}`]
+  const createdCategoryName = categoryNames[0] ?? 'shuvmaki Audio'
 
   const existingCategory = guild.channels.cache.find(
     (channel): channel is CategoryChannel => {
@@ -129,7 +131,7 @@ export async function ensureKimakiAudioCategory(
   }
 
   return guild.channels.create({
-    name: categoryNames[0],
+    name: createdCategoryName,
     type: ChannelType.GuildCategory,
   })
 }

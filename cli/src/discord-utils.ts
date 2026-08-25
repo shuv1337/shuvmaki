@@ -46,6 +46,9 @@ export function hasKimakiBotPermission(
   if (!member) {
     return false
   }
+  if (!hasResolvedRoleContext(member, guild)) {
+    return false
+  }
   const hasNoKimakiRole = hasBlockedBotRole(member, guild)
   if (hasNoKimakiRole) {
     return false
@@ -77,6 +80,9 @@ export function hasKimakiAdminPermission(
   guild?: Guild | null,
 ): boolean {
   if (!member) {
+    return false
+  }
+  if (!hasResolvedRoleContext(member, guild)) {
     return false
   }
   const hasNoKimaki = hasBlockedBotRole(member, guild)
@@ -118,6 +124,23 @@ export async function resolveGuildMessageMember(
 const ALLOWED_BOT_ROLE_NAMES = ['shuvmaki', 'kimaki'] as const
 const BLOCKED_BOT_ROLE_NAMES = ['no-shuvmaki', 'no-kimaki'] as const
 
+function hasResolvedRoleContext(
+  member: GuildMemberType | APIInteractionGuildMember,
+  guild?: Guild | null,
+): boolean {
+  if (member instanceof GuildMember) {
+    return member.roles.cache.size > 0
+      && member.roles.cache.every((role) => typeof role?.name === 'string')
+  }
+
+  const roleIds = Array.isArray(member.roles) ? member.roles : []
+  if (roleIds.length === 0) return true
+  if (!guild) return false
+  return roleIds.every((roleId) => {
+    return typeof guild.roles.cache.get(roleId)?.name === 'string'
+  })
+}
+
 function hasAllowedBotRole(
   member: GuildMemberType | APIInteractionGuildMember,
   guild?: Guild | null,
@@ -144,7 +167,7 @@ function hasRoleByName(
   const target = roleName.toLowerCase()
 
   if (member instanceof GuildMember) {
-    return member.roles.cache.some((role) => role.name.toLowerCase() === target)
+    return member.roles.cache.some((role) => role?.name.toLowerCase() === target)
   }
 
   if (!guild) {
@@ -171,7 +194,7 @@ export function hasNoKimakiRole(member: GuildMemberType | null): boolean {
   }
   return BLOCKED_BOT_ROLE_NAMES.some((roleName) => {
     return member.roles.cache.some(
-      (role) => role.name.toLowerCase() === roleName,
+      (role) => role?.name.toLowerCase() === roleName,
     )
   })
 }

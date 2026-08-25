@@ -122,11 +122,17 @@ Do not export `KIMAKI_BOT_TOKEN` in the gateway client service. That environment
 variable takes precedence over saved credentials and switches the client back
 to direct bot-token authentication.
 
-Then:
+Then, keep mention mode enabled so top-level project-channel messages only
+start sessions when the bot is explicitly mentioned. Existing session threads
+continue accepting messages without mentions:
 
 ```bash
-kimaki --gateway
+kimaki --gateway --mention-mode
 ```
+
+Keep `--mention-mode` on the production service command after onboarding as
+well. Per-channel settings created by `/toggle-mention-mode` override this
+default.
 
 The CLI generates `clientId` + `clientSecret`, opens
 `$KIMAKI_WEBSITE_URL/discord-install?...`, polls

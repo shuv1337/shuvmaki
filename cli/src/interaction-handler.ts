@@ -118,6 +118,16 @@ import { getChannelDirectory } from './database.js'
 
 const interactionLogger = createLogger(LogPrefix.INTERACTION)
 
+function ignoreUnauthorizedInteraction(interaction: Interaction): boolean {
+  if (hasKimakiBotPermission(interaction.member, interaction.guild)) {
+    return false
+  }
+  interactionLogger.log(
+    `[PERMISSION] Ignoring unauthorized interaction from user ${interaction.user.id}`,
+  )
+  return true
+}
+
 /** Setup commands that should reply with guidance when used in
  * non-project channels, instead of silently ignoring. */
 const SETUP_COMMANDS = new Set([
@@ -206,7 +216,7 @@ export function registerInteractionHandler({
         }
 
         if (interaction.isAutocomplete()) {
-          if (!hasKimakiBotPermission(interaction.member, interaction.guild)) {
+          if (ignoreUnauthorizedInteraction(interaction)) {
             await interaction.respond([])
             return
           }
@@ -251,11 +261,7 @@ export function registerInteractionHandler({
             `[COMMAND] Processing: ${interaction.commandName}`,
           )
 
-          if (!hasKimakiBotPermission(interaction.member, interaction.guild)) {
-            await interaction.reply({
-              content: `You don't have permission to use this command.\nTo use shuvmaki, ask a server admin to give you the **shuvmaki** role.`,
-              flags: MessageFlags.Ephemeral,
-            })
+          if (ignoreUnauthorizedInteraction(interaction)) {
             return
           }
 
@@ -465,11 +471,7 @@ export function registerInteractionHandler({
         }
 
         if (interaction.isButton()) {
-          if (!hasKimakiBotPermission(interaction.member, interaction.guild)) {
-            await interaction.reply({
-              content: `You don't have permission to use this.\nTo use shuvmaki, ask a server admin to give you the **shuvmaki** role.`,
-              flags: MessageFlags.Ephemeral,
-            })
+          if (ignoreUnauthorizedInteraction(interaction)) {
             return
           }
 
@@ -551,11 +553,7 @@ export function registerInteractionHandler({
         }
 
         if (interaction.isStringSelectMenu()) {
-          if (!hasKimakiBotPermission(interaction.member, interaction.guild)) {
-            await interaction.reply({
-              content: `You don't have permission to use this.\nTo use shuvmaki, ask a server admin to give you the **shuvmaki** role.`,
-              flags: MessageFlags.Ephemeral,
-            })
+          if (ignoreUnauthorizedInteraction(interaction)) {
             return
           }
 
@@ -636,11 +634,7 @@ export function registerInteractionHandler({
         }
 
         if (interaction.isModalSubmit()) {
-          if (!hasKimakiBotPermission(interaction.member, interaction.guild)) {
-            await interaction.reply({
-              content: `You don't have permission to use this.\nTo use shuvmaki, ask a server admin to give you the **shuvmaki** role.`,
-              flags: MessageFlags.Ephemeral,
-            })
+          if (ignoreUnauthorizedInteraction(interaction)) {
             return
           }
 

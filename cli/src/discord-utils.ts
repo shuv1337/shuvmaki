@@ -36,8 +36,9 @@ const discordLogger = createLogger(LogPrefix.DISCORD)
 /**
  * Centralized permission check for Kimaki bot access.
  * Returns true if the member has permission to use the bot:
- * - Server owner, Administrator, Manage Server, or "Kimaki" role (case-insensitive).
- * Returns false if member is null or has the "no-kimaki" role (overrides all).
+ * - Server owner, Administrator, Manage Server, or "shuvmaki"/"kimaki" role
+ *   (case-insensitive), or allowAllUsers.
+ * Returns false if member is null or has the "no-kimaki"/"no-shuvmaki" role.
  */
 export function hasKimakiBotPermission(
   member: GuildMemberType | APIInteractionGuildMember | null,

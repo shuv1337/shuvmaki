@@ -182,7 +182,7 @@ export type KimakiState = {
 export const store = createStore<KimakiState>(() => ({
   dataDir: null,
   projectsDir: null,
-  defaultVerbosity: 'text_and_essential_tools',
+  defaultVerbosity: 'text_only',
   defaultMentionMode: false,
   critiqueEnabled: true,
   enabledSkills: [],

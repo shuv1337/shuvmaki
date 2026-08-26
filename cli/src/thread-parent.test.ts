@@ -15,6 +15,6 @@ describe('resolveThreadParentId', () => {
     } as never)
 
     expect(parentId).toBe('parent-channel')
-    expect(fetch).toHaveBeenCalledWith('thread-channel')
+    expect(fetch).toHaveBeenCalledWith('thread-channel', { force: true })
   })
 })

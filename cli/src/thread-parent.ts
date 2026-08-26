@@ -15,7 +15,7 @@ export async function resolveThreadParentId({
   }
 
   const fetched = await client.channels
-    .fetch(channelId)
+    .fetch(channelId, { force: true })
     .catch((error) => new DiscordOperationError({ operation: 'fetchChannel', cause: error }))
   if (!(fetched instanceof Error) && fetched?.isThread()) {
     return fetched.parentId

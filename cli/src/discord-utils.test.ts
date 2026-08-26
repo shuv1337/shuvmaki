@@ -148,6 +148,27 @@ describe('hasKimakiBotPermission', () => {
     expect(hasKimakiBotPermission(member, guild)).toBe(false)
   })
 
+  test('still blocks no-shuvmaki role even when allowAllUsers is enabled', () => {
+    store.setState({ allowAllUsers: true })
+    const noShuvmakiRoleId = '223'
+    const guild = {
+      ownerId: 'owner-id',
+      roles: {
+        cache: new Map([
+          [noShuvmakiRoleId, { id: noShuvmakiRoleId, name: 'no-shuvmaki' }],
+        ]),
+      },
+    } as any
+
+    const member = {
+      user: { id: 'member-id' },
+      permissions: PermissionsBitField.Flags.Administrator.toString(),
+      roles: [noShuvmakiRoleId],
+    } as any
+
+    expect(hasKimakiBotPermission(member, guild)).toBe(false)
+  })
+
   test('allows API interaction member when shuvmaki role exists', () => {
     const shuvmakiRoleId = '333'
     const guild = {

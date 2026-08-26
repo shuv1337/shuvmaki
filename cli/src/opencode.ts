@@ -875,6 +875,20 @@ async function startSingleServer({
               cache_read: 0.20,
             },
           },
+          'grok-4.6': {
+            name: 'Grok 4.6',
+            attachment: true,
+            tool_call: true,
+            limit: {
+              context: 256000,
+              output: 256000,
+            },
+            cost: {
+              input: 0.50,
+              output: 2.50,
+              cache_read: 0.20,
+            },
+          },
         },
       },
     },

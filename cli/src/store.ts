@@ -91,7 +91,7 @@ export type KimakiState = {
 
   // When true, all Discord users can start sessions and use commands without
   // needing the Kimaki role, Administrator, Manage Server, or being the owner.
-  // The "no-kimaki" role still blocks access even when this is enabled.
+  // The "no-kimaki" / "no-shuvmaki" role still blocks access even when this is enabled.
   // Changes: set once at startup from --allow-all-users CLI flag.
   // Read by: discord-utils.ts hasKimakiBotPermission().
   allowAllUsers: boolean

@@ -756,6 +756,13 @@ export async function resolveGatewayInstallCredentials(): Promise<
   })
 
   if (gatewayBot?.client_id && gatewayBot.client_secret) {
+    await setBotMode({
+      appId: KIMAKI_GATEWAY_APP_ID,
+      mode: 'gateway',
+      clientId: gatewayBot.client_id,
+      clientSecret: gatewayBot.client_secret,
+      proxyUrl: KIMAKI_GATEWAY_PROXY_REST_BASE_URL,
+    })
     return {
       clientId: gatewayBot.client_id,
       clientSecret: gatewayBot.client_secret,
@@ -1287,8 +1294,11 @@ export async function resolveCredentials({
   // directly. This lets users switch back and forth between modes without
   // re-running the onboarding wizard each time.
   const hasGatewayCreds = (forceGateway && existingBot?.mode !== 'gateway')
-    ? await (await getDb()).query.bot_tokens.findFirst({
-        where: { app_id: KIMAKI_GATEWAY_APP_ID },
+      ? await (await getDb()).query.bot_tokens.findFirst({
+        where: {
+          app_id: KIMAKI_GATEWAY_APP_ID,
+          bot_mode: 'gateway',
+        },
       })
     : undefined
 

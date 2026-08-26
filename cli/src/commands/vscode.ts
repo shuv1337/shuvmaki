@@ -22,12 +22,12 @@ import {
   registerHtmlAction,
 } from '../html-actions.js'
 import { createLogger } from '../logger.js'
+import { getKimakiTunnelUrlTemplate } from '../tunnel-config.js'
 
 const logger = createLogger('VSCODE')
 const SECURE_REPLY_FLAGS = MessageFlags.Ephemeral | SILENT_MESSAGE_FLAGS
 const MAX_SESSION_MINUTES = 30
 const MAX_SESSION_MS = MAX_SESSION_MINUTES * 60 * 1000
-const TUNNEL_BASE_DOMAIN = 'kimaki.dev'
 const TUNNEL_ID_BYTES = 16
 const READY_TIMEOUT_MS = 60_000
 const LOCAL_HOST = '127.0.0.1'
@@ -212,7 +212,7 @@ export async function startVscode({
     localPort: port,
     localHost: LOCAL_HOST,
     tunnelId,
-    baseDomain: TUNNEL_BASE_DOMAIN,
+    urlTemplate: getKimakiTunnelUrlTemplate(),
   })
 
   try {

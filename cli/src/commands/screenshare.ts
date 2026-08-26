@@ -26,6 +26,7 @@ import { startWebsockify } from '../websockify.js'
 import { createLogger } from '../logger.js'
 import { execAsync } from '../worktrees.js'
 import type { WebSocketServer } from 'ws'
+import { getKimakiTunnelUrlTemplate } from '../tunnel-config.js'
 
 const logger = createLogger('SCREEN')
 const SECURE_REPLY_FLAGS = MessageFlags.Ephemeral | SILENT_MESSAGE_FLAGS
@@ -49,16 +50,16 @@ const activeSessions = new Map<string, ScreenshareSession>()
 const VNC_PORT = 5900
 const MAX_SESSION_MINUTES = 30
 const MAX_SESSION_MS = MAX_SESSION_MINUTES * 60 * 1000
-const TUNNEL_BASE_DOMAIN = 'kimaki.dev'
 const SCREENSHARE_TUNNEL_ID_BYTES = 16
 
 // Public noVNC client — we point it at our tunnel URL
-export function buildNoVncUrl({ tunnelHost }: { tunnelHost: string }): string {
+export function buildNoVncUrl({ tunnelUrl }: { tunnelUrl: string }): string {
+  const url = new URL(tunnelUrl)
   const params = new URLSearchParams({
     autoconnect: 'true',
-    host: tunnelHost,
-    port: '443',
-    encrypt: '1',
+    host: url.hostname,
+    port: url.port || (url.protocol === 'https:' ? '443' : '80'),
+    encrypt: url.protocol === 'https:' ? '1' : '0',
     resize: 'scale',
     view_only: 'false',
   })
@@ -232,7 +233,7 @@ export async function startScreenshare({
   const tunnelClient = new TunnelClient({
     localPort: wsInstance.port,
     tunnelId,
-    baseDomain: TUNNEL_BASE_DOMAIN,
+    urlTemplate: getKimakiTunnelUrlTemplate(),
   })
 
   try {
@@ -253,9 +254,8 @@ export async function startScreenshare({
     throw err
   }
 
-  const tunnelHost = `${tunnelId}-tunnel.${TUNNEL_BASE_DOMAIN}`
-  const tunnelUrl = `https://${tunnelHost}`
-  const noVncUrl = buildNoVncUrl({ tunnelHost })
+  const tunnelUrl = tunnelClient.url
+  const noVncUrl = buildNoVncUrl({ tunnelUrl })
 
   // Auto-kill after a short session so a leaked URL does not stay usable all day.
   const timeoutTimer = setTimeout(() => {

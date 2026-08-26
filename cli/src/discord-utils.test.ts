@@ -1,4 +1,4 @@
-import { PermissionsBitField, type Message } from 'discord.js'
+import { Collection, GuildMember, PermissionsBitField, type Message } from 'discord.js'
 import { afterEach, describe, expect, test } from 'vitest'
 import {
   hasKimakiAdminPermission,
@@ -146,6 +146,24 @@ describe('hasKimakiBotPermission', () => {
     } as any
 
     expect(hasKimakiBotPermission(member, guild)).toBe(false)
+  })
+
+  test('denies cached members when a referenced role is unresolved', () => {
+    store.setState({ allowAllUsers: true })
+    const member = Object.create(GuildMember.prototype)
+    Object.defineProperties(member, {
+      guild: { value: { id: 'guild-id', ownerId: 'owner-id' } },
+      id: { value: 'member-id' },
+      roles: {
+        value: {
+          cache: new Collection<string, { name: string } | undefined>([
+            ['missing-role-id', undefined],
+          ]),
+        },
+      },
+    })
+
+    expect(hasKimakiBotPermission(member)).toBe(false)
   })
 
   test('still blocks no-shuvmaki role even when allowAllUsers is enabled', () => {

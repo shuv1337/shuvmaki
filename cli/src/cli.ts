@@ -63,7 +63,7 @@ cli
   )
   .option(
     '--verbosity <level>',
-    'Default verbosity for all channels (tools_and_text, text_and_essential_tools, or text_only)',
+    'Default verbosity for all channels (default: text_only)',
   )
   .option(
     '--mention-mode',

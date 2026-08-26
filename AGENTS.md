@@ -1,4 +1,4 @@
-after every change always run tsc inside cli to validate your changes. try to never use as any
+After every change, validate the CLI from `cli/` with `pnpm exec tsc --noEmit`; this resolves the workspace-root TypeScript binary reliably. Try to avoid `as any`.
 
 always load the `changesets` skill before fixing bugs or adding features. User-facing fixes and features usually need a `.changeset/*.md` entry, and the skill explains package selection, issue references, descriptive filenames, and `.changeset/readme.md` expectations.
 

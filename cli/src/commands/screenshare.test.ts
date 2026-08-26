@@ -17,7 +17,9 @@ describe('screenshare security defaults', () => {
 
   test('builds a secure noVNC URL', () => {
     const url = new URL(
-      buildNoVncUrl({ tunnelHost: '0123456789abcdef-tunnel.kimaki.dev' }),
+      buildNoVncUrl({
+        tunnelUrl: 'https://0123456789abcdef-tunnel.kimaki.dev',
+      }),
     )
 
     expect(url.origin).toBe('https://novnc.com')
@@ -26,5 +28,15 @@ describe('screenshare security defaults', () => {
     )
     expect(url.searchParams.get('port')).toBe('443')
     expect(url.searchParams.get('encrypt')).toBe('1')
+  })
+
+  test('uses the configured tunnel protocol and port', () => {
+    const url = new URL(
+      buildNoVncUrl({ tunnelUrl: 'http://preview.example.com:8787' }),
+    )
+
+    expect(url.searchParams.get('host')).toBe('preview.example.com')
+    expect(url.searchParams.get('port')).toBe('8787')
+    expect(url.searchParams.get('encrypt')).toBe('0')
   })
 })

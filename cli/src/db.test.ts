@@ -11,6 +11,7 @@ import * as schema from './schema.js'
 import {
   appendSessionEventsSinceLastTimestamp,
   createPendingWorkspace,
+  getChannelVerbosity,
   getSessionEventSnapshot,
   getSessionModel,
   setSessionModel,
@@ -25,6 +26,10 @@ afterAll(async () => {
 })
 
 describe('getDb', () => {
+  test('uses text-only output when a channel has no verbosity override', async () => {
+    expect(await getChannelVerbosity('default-verbosity-test')).toBe('text_only')
+  })
+
   test('creates sqlite file and migrates schema automatically', async () => {
     const db = await getDb()
 

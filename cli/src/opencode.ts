@@ -820,6 +820,14 @@ async function startSingleServer({
         isDev ? './kimaki-opencode-plugin.ts' : './kimaki-opencode-plugin.js',
         import.meta.url,
       ).href,
+      [
+        '@plannotator/opencode@0.27.8',
+        {
+          workflow: 'plan-agent',
+          planningAgents: ['plan'],
+          runtime: 'cli',
+        },
+      ],
     ],
     permission: {
       edit: 'allow',

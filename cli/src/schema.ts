@@ -260,7 +260,7 @@ export const session_sleeps = sqliteCore.sqliteTable('session_sleeps', {
 
 export const ipc_requests = sqliteCore.sqliteTable('ipc_requests', {
   id: sqliteCore.text('id').primaryKey().notNull().$defaultFn(() => crypto.randomUUID()),
-  type: sqliteCore.text('type', { enum: ['file_upload', 'action_buttons'] }).notNull(),
+  type: sqliteCore.text('type', { enum: ['file_upload', 'action_buttons', 'plannotator_review'] }).notNull(),
   session_id: sqliteCore.text('session_id').notNull(),
   thread_id: sqliteCore.text('thread_id').notNull().references(() => thread_sessions.thread_id, { onUpdate: 'cascade' }),
   payload: sqliteCore.text('payload').notNull(),

@@ -1208,6 +1208,18 @@ export async function completeIpcRequest({ id, response }: { id: string; respons
   return row
 }
 
+export async function cancelPendingIpcRequest({ id, response }: { id: string; response: string }) {
+  const db = await getDb()
+  const [row] = await db.update(schema.ipc_requests)
+    .set({ response, status: 'cancelled' })
+    .where(orm.and(
+      orm.eq(schema.ipc_requests.id, id),
+      orm.eq(schema.ipc_requests.status, 'pending'),
+    ))
+    .returning({ id: schema.ipc_requests.id })
+  return Boolean(row)
+}
+
 export async function getIpcRequestById({ id }: { id: string }) {
   const db = await getDb()
   return await db.query.ipc_requests.findFirst({ where: { id } }) ?? null

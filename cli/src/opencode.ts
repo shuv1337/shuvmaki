@@ -87,6 +87,7 @@ import {
 } from './errors.js'
 import {
   ensureKimakiCommandShim,
+  ensurePlannotatorCommandShim,
   getPathEnvKey,
   getSpawnCommandAndArgs,
   prependPathEntry,
@@ -775,6 +776,16 @@ async function startSingleServer({
   if (kimakiShimDirectory instanceof Error) {
     opencodeLogger.warn(kimakiShimDirectory.message)
   }
+  const plannotatorShim = kimakiShimDirectory instanceof Error
+    ? kimakiShimDirectory
+    : ensurePlannotatorCommandShim({ shimDirectory: kimakiShimDirectory })
+  const plannotatorCommand = tryWhichCommand('plannotator')
+  if (plannotatorShim instanceof Error) {
+    opencodeLogger.warn(plannotatorShim.message)
+  }
+  if (!plannotatorCommand) {
+    opencodeLogger.warn('Plannotator executable not found; remote plan reviews are disabled')
+  }
   const gatewayToken = store.getState().gatewayToken
   const vitestOpencodeEnv = (() => {
     if (process.env.KIMAKI_VITEST !== '1') {
@@ -941,6 +952,13 @@ async function startSingleServer({
         // Guard: prevents agents from running `kimaki` root command inside
         // an OpenCode session, which would steal the lock port and break the bot.
         KIMAKI_OPENCODE_PROCESS: '1',
+        ...(plannotatorShim instanceof Error || !plannotatorCommand ? {} : {
+          PLANNOTATOR_BIN: plannotatorShim,
+          KIMAKI_PLANNOTATOR_REAL_BIN: plannotatorCommand,
+          KIMAKI_PLANNOTATOR_TUNNEL: '1',
+          PLANNOTATOR_SKIP_BROWSER_OPEN: '1',
+          PLANNOTATOR_PLAN_TIMEOUT_SECONDS: '3600',
+        }),
         ...(getHranaUrl() && { KIMAKI_DB_URL: getHranaUrl()! }),
         ...(process.env.KIMAKI_SENTRY_DSN && {
           KIMAKI_SENTRY_DSN: process.env.KIMAKI_SENTRY_DSN,

@@ -67,6 +67,20 @@ type ClaimedRequest = {
   payload: string
 }
 
+export function formatPlannotatorReviewMessage({
+  url,
+  password,
+}: {
+  url: string
+  password: string
+}) {
+  return (
+    'Plan review ready. Anyone with this unique link and password can approve or request changes. ' +
+    'The tunnel closes when the review ends or after 60 minutes.\n' +
+    `<${url}>\nPassword: ||\`${password}\`||`
+  )
+}
+
 async function dispatchRequest({
   req,
   discordClient,
@@ -227,6 +241,83 @@ async function dispatchRequest({
         id: req.id,
         response: JSON.stringify({ ok: true }),
       })
+      return
+    }
+
+    case 'plannotator_review': {
+      const parsed = errore.try(
+        () => JSON.parse(req.payload) as { url?: unknown; password?: unknown },
+        (e) => new IpcDispatchError({
+          requestId: req.id,
+          reason: 'Invalid Plannotator payload JSON',
+          cause: e,
+        }),
+      )
+      if (parsed instanceof Error) {
+        await completeIpcRequest({ id: req.id, response: JSON.stringify({ error: parsed.message }) })
+        return parsed
+      }
+      if (
+        typeof parsed.url !== 'string' ||
+        typeof parsed.password !== 'string' ||
+        !/^[a-f0-9]{32}$/.test(parsed.password)
+      ) {
+        const message = 'Invalid review credentials'
+        await completeIpcRequest({ id: req.id, response: JSON.stringify({ error: message }) })
+        return new IpcDispatchError({ requestId: req.id, reason: message })
+      }
+      const reviewUrlValue = parsed.url
+      const reviewPassword = parsed.password
+      const reviewUrl = errore.try(
+        () => new URL(reviewUrlValue),
+        (e) => new IpcDispatchError({
+          requestId: req.id,
+          reason: 'Invalid review URL',
+          cause: e,
+        }),
+      )
+      if (reviewUrl instanceof Error || reviewUrl.protocol !== 'https:') {
+        const message = reviewUrl instanceof Error ? reviewUrl.message : 'Review URL must use HTTPS'
+        await completeIpcRequest({ id: req.id, response: JSON.stringify({ error: message }) })
+        return reviewUrl instanceof Error
+          ? reviewUrl
+          : new IpcDispatchError({ requestId: req.id, reason: message })
+      }
+
+      const thread = await discordClient.channels.fetch(req.thread_id).catch(
+        (e) => new IpcDispatchError({
+          requestId: req.id,
+          reason: 'Thread fetch failed',
+          cause: e,
+        }),
+      )
+      if (thread instanceof Error) {
+        await completeIpcRequest({ id: req.id, response: JSON.stringify({ error: thread.message }) })
+        return thread
+      }
+      if (!thread?.isThread()) {
+        await completeIpcRequest({ id: req.id, response: JSON.stringify({ error: 'Thread not found' }) })
+        return new IpcDispatchError({ requestId: req.id, reason: 'Thread not found' })
+      }
+
+      const sent = await thread.send({
+        content: formatPlannotatorReviewMessage({
+          url: reviewUrl.toString(),
+          password: reviewPassword,
+        }),
+        allowedMentions: { parse: [] },
+      }).catch(
+        (e) => new IpcDispatchError({
+          requestId: req.id,
+          reason: 'Review link send failed',
+          cause: e,
+        }),
+      )
+      if (sent instanceof Error) {
+        await completeIpcRequest({ id: req.id, response: JSON.stringify({ error: sent.message }) })
+        return sent
+      }
+      await completeIpcRequest({ id: req.id, response: JSON.stringify({ ok: true }) })
       return
     }
 

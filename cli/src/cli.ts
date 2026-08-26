@@ -25,6 +25,7 @@ import sendCommands from './cli-commands/send.js'
 import sessionCommands from './cli-commands/session.js'
 import taskCommands from './cli-commands/task.js'
 import userCommands from './cli-commands/user.js'
+import plannotatorCommands from './cli-commands/plannotator.js'
 import {
   EXIT_NO_RESTART,
   printDiscordInstallUrlAndExit,
@@ -34,6 +35,7 @@ import {
 const cliLogger = createLogger(LogPrefix.CLI)
 const cli = goke('shuvmaki')
 cli.use(multioauthCommands)
+cli.use(plannotatorCommands)
 
 process.title = 'shuvmaki'
 

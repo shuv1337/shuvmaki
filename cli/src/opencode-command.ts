@@ -170,6 +170,34 @@ export function ensureKimakiCommandShim({
   }
 }
 
+export function ensurePlannotatorCommandShim({
+  shimDirectory,
+  platform,
+}: {
+  shimDirectory: string
+  platform?: NodeJS.Platform
+}): string | Error {
+  const effectivePlatform = platform || process.platform
+
+  try {
+    if (effectivePlatform === 'win32') {
+      return new Error('Remote Plannotator reviews are not yet supported on Windows')
+    }
+
+    const shimPath = path.join(shimDirectory, 'plannotator-kimaki')
+    const kimakiPath = path.join(shimDirectory, 'kimaki')
+    const shimContent = [
+      '#!/bin/sh',
+      `exec ${quotePosixShellSegment(kimakiPath)} plannotator-tunnel -- "$@"`,
+      '',
+    ].join('\n')
+    writeShimIfNeeded({ shimPath, shimContent, mode: 0o755 })
+    return shimPath
+  } catch (cause) {
+    return new Error('Failed to create Plannotator command shim', { cause })
+  }
+}
+
 export function prependPathEntry({
   entry,
   existingPath,

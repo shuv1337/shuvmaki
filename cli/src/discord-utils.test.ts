@@ -1,5 +1,13 @@
 import { PermissionsBitField, type Message } from 'discord.js'
-import { afterEach, describe, expect, test } from 'vitest'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { afterEach, beforeEach, describe, expect, test } from 'vitest'
+import {
+  ALLOWED_USER_IDS_ENV,
+  ALLOWED_USERS_FILENAME,
+} from './allowed-users.js'
+import { getDataDir, setDataDir } from './config.js'
 import {
   hasKimakiAdminPermission,
   hasKimakiBotPermission,
@@ -106,13 +114,54 @@ describe('splitMarkdownForDiscord', () => {
   })
 })
 
+function writeAllowedUsers(userIds: string[]): void {
+  fs.writeFileSync(
+    path.join(getDataDir(), ALLOWED_USERS_FILENAME),
+    `${JSON.stringify({ userIds }, null, 2)}\n`,
+  )
+}
+
 describe('hasKimakiBotPermission', () => {
-  afterEach(() => {
+  let tmpDir = ''
+  let originalEnv: string | undefined
+
+  beforeEach(() => {
+    originalEnv = process.env[ALLOWED_USER_IDS_ENV]
+    delete process.env[ALLOWED_USER_IDS_ENV]
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kimaki-permission-'))
+    setDataDir(tmpDir)
     store.setState({ allowAllUsers: false })
   })
 
-  test('allows any member when allowAllUsers is enabled', () => {
+  afterEach(() => {
+    if (originalEnv === undefined) {
+      delete process.env[ALLOWED_USER_IDS_ENV]
+    } else {
+      process.env[ALLOWED_USER_IDS_ENV] = originalEnv
+    }
+    store.setState({ allowAllUsers: false })
+    fs.rmSync(tmpDir, { recursive: true, force: true })
+  })
+
+  test('denies allowAllUsers member who is not on the allowlist', () => {
     store.setState({ allowAllUsers: true })
+    const guild = {
+      ownerId: 'owner-id',
+      roles: { cache: new Map() },
+    } as any
+
+    const member = {
+      user: { id: 'member-id' },
+      permissions: '0',
+      roles: [],
+    } as any
+
+    expect(hasKimakiBotPermission(member, guild)).toBe(false)
+  })
+
+  test('allows allowAllUsers member who is on the allowlist', () => {
+    store.setState({ allowAllUsers: true })
+    writeAllowedUsers(['member-id'])
     const guild = {
       ownerId: 'owner-id',
       roles: { cache: new Map() },
@@ -127,8 +176,9 @@ describe('hasKimakiBotPermission', () => {
     expect(hasKimakiBotPermission(member, guild)).toBe(true)
   })
 
-  test('still blocks no-kimaki role even when allowAllUsers is enabled', () => {
+  test('still blocks no-kimaki role even when allowAllUsers and allowlist are enabled', () => {
     store.setState({ allowAllUsers: true })
+    writeAllowedUsers(['member-id'])
     const noKimakiRoleId = '222'
     const guild = {
       ownerId: 'owner-id',
@@ -148,7 +198,49 @@ describe('hasKimakiBotPermission', () => {
     expect(hasKimakiBotPermission(member, guild)).toBe(false)
   })
 
-  test('allows API interaction member when shuvmaki role exists', () => {
+  test('still blocks no-shuvmaki role even when allowlisted', () => {
+    writeAllowedUsers(['member-id'])
+    const noShuvmakiRoleId = '223'
+    const guild = {
+      ownerId: 'owner-id',
+      roles: {
+        cache: new Map([
+          [noShuvmakiRoleId, { id: noShuvmakiRoleId, name: 'no-shuvmaki' }],
+        ]),
+      },
+    } as any
+
+    const member = {
+      user: { id: 'member-id' },
+      permissions: PermissionsBitField.Flags.Administrator.toString(),
+      roles: [noShuvmakiRoleId],
+    } as any
+
+    expect(hasKimakiBotPermission(member, guild)).toBe(false)
+  })
+
+  test('denies shuvmaki role when user is not on the allowlist', () => {
+    const shuvmakiRoleId = '333'
+    const guild = {
+      ownerId: 'owner-id',
+      roles: {
+        cache: new Map([
+          [shuvmakiRoleId, { id: shuvmakiRoleId, name: 'shuvmaki' }],
+        ]),
+      },
+    } as any
+
+    const member = {
+      user: { id: 'member-id' },
+      permissions: '0',
+      roles: [shuvmakiRoleId],
+    } as any
+
+    expect(hasKimakiBotPermission(member, guild)).toBe(false)
+  })
+
+  test('allows API interaction member when shuvmaki role and allowlist match', () => {
+    writeAllowedUsers(['member-id'])
     const shuvmakiRoleId = '333'
     const guild = {
       ownerId: 'owner-id',
@@ -168,7 +260,8 @@ describe('hasKimakiBotPermission', () => {
     expect(hasKimakiBotPermission(member, guild)).toBe(true)
   })
 
-  test('allows API interaction member when kimaki role exists', () => {
+  test('allows API interaction member when kimaki role and allowlist match', () => {
+    writeAllowedUsers(['member-id'])
     const kimakiRoleId = '111'
     const guild = {
       ownerId: 'owner-id',
@@ -188,7 +281,8 @@ describe('hasKimakiBotPermission', () => {
     expect(hasKimakiBotPermission(member, guild)).toBe(true)
   })
 
-  test('allows API interaction member with ManageGuild permission', () => {
+  test('allows API interaction member with ManageGuild permission when allowlisted', () => {
+    writeAllowedUsers(['member-id'])
     const guild = {
       ownerId: 'owner-id',
       roles: { cache: new Map() },
@@ -204,6 +298,7 @@ describe('hasKimakiBotPermission', () => {
   })
 
   test('denies API interaction member with no role, owner, or admin rights', () => {
+    writeAllowedUsers(['member-id'])
     const guild = {
       ownerId: 'owner-id',
       roles: { cache: new Map() },
@@ -217,15 +312,72 @@ describe('hasKimakiBotPermission', () => {
 
     expect(hasKimakiBotPermission(member, guild)).toBe(false)
   })
+
+  test('seeds guild owner into allowed-users.json and allows the owner', () => {
+    const guild = {
+      ownerId: 'owner-id',
+      roles: { cache: new Map() },
+    } as any
+
+    const member = {
+      user: { id: 'owner-id' },
+      permissions: '0',
+      roles: [],
+    } as any
+
+    expect(hasKimakiBotPermission(member, guild)).toBe(true)
+    expect(
+      JSON.parse(fs.readFileSync(path.join(tmpDir, ALLOWED_USERS_FILENAME), 'utf8')),
+    ).toEqual({ userIds: ['owner-id'] })
+  })
+
+  test('allows env extra IDs from SHUVMAKI_ALLOWED_USER_IDS with a role', () => {
+    process.env[ALLOWED_USER_IDS_ENV] = 'env-user'
+    const shuvmakiRoleId = '333'
+    const guild = {
+      ownerId: 'owner-id',
+      roles: {
+        cache: new Map([
+          [shuvmakiRoleId, { id: shuvmakiRoleId, name: 'shuvmaki' }],
+        ]),
+      },
+    } as any
+
+    const member = {
+      user: { id: 'env-user' },
+      permissions: '0',
+      roles: [shuvmakiRoleId],
+    } as any
+
+    expect(hasKimakiBotPermission(member, guild)).toBe(true)
+  })
 })
 
 describe('hasKimakiAdminPermission', () => {
-  afterEach(() => {
+  let tmpDir = ''
+  let originalEnv: string | undefined
+
+  beforeEach(() => {
+    originalEnv = process.env[ALLOWED_USER_IDS_ENV]
+    delete process.env[ALLOWED_USER_IDS_ENV]
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kimaki-admin-permission-'))
+    setDataDir(tmpDir)
     store.setState({ allowAllUsers: false })
+  })
+
+  afterEach(() => {
+    if (originalEnv === undefined) {
+      delete process.env[ALLOWED_USER_IDS_ENV]
+    } else {
+      process.env[ALLOWED_USER_IDS_ENV] = originalEnv
+    }
+    store.setState({ allowAllUsers: false })
+    fs.rmSync(tmpDir, { recursive: true, force: true })
   })
 
   test('denies unprivileged member even when allowAllUsers is enabled', () => {
     store.setState({ allowAllUsers: true })
+    writeAllowedUsers(['member-id'])
     const guild = {
       ownerId: 'owner-id',
       roles: { cache: new Map() },
@@ -240,8 +392,24 @@ describe('hasKimakiAdminPermission', () => {
     expect(hasKimakiAdminPermission(member, guild)).toBe(false)
   })
 
-  test('allows admin even when allowAllUsers is enabled', () => {
+  test('denies admin who is not on the allowlist', () => {
+    const guild = {
+      ownerId: 'owner-id',
+      roles: { cache: new Map() },
+    } as any
+
+    const member = {
+      user: { id: 'member-id' },
+      permissions: PermissionsBitField.Flags.Administrator.toString(),
+      roles: [],
+    } as any
+
+    expect(hasKimakiAdminPermission(member, guild)).toBe(false)
+  })
+
+  test('allows admin even when allowAllUsers is enabled if allowlisted', () => {
     store.setState({ allowAllUsers: true })
+    writeAllowedUsers(['member-id'])
     const guild = {
       ownerId: 'owner-id',
       roles: { cache: new Map() },

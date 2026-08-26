@@ -25,6 +25,7 @@ import { getChannelDirectory, getThreadWorktreeOrWorkspace } from './database.js
 import { DiscordOperationError } from './errors.js'
 import { limitHeadingDepth } from './limit-heading-depth.js'
 import { unnestCodeBlocksFromLists } from './unnest-code-blocks.js'
+import { isAllowedUserId, seedGuildOwner } from './allowed-users.js'
 import { createLogger, LogPrefix } from './logger.js'
 import { store } from './store.js'
 import mime from 'mime'
@@ -33,11 +34,27 @@ import path from 'node:path'
 
 const discordLogger = createLogger(LogPrefix.DISCORD)
 
+function resolveMemberId(
+  member: GuildMemberType | APIInteractionGuildMember,
+): string {
+  return member instanceof GuildMember ? member.id : member.user.id
+}
+
+function resolveOwnerId(
+  member: GuildMemberType | APIInteractionGuildMember,
+  guild?: Guild | null,
+): string | undefined {
+  return member instanceof GuildMember ? member.guild.ownerId : guild?.ownerId
+}
+
 /**
  * Centralized permission check for Kimaki bot access.
  * Returns true if the member has permission to use the bot:
- * - Server owner, Administrator, Manage Server, or "Kimaki" role (case-insensitive).
- * Returns false if member is null or has the "no-kimaki" role (overrides all).
+ * - User ID is on the durable allowlist (allowed-users.json / SHUVMAKI_ALLOWED_USER_IDS)
+ * - And server owner, Administrator, Manage Server, or "shuvmaki"/"kimaki" role
+ *   (or allowAllUsers). Role-only and allowAllUsers cannot bypass the allowlist.
+ * Returns false if member is null or has the "no-kimaki"/"no-shuvmaki" role.
+ * Seeds the guild owner into allowed-users.json on the first check.
  */
 export function hasKimakiBotPermission(
   member: GuildMemberType | APIInteractionGuildMember | null,
@@ -46,8 +63,16 @@ export function hasKimakiBotPermission(
   if (!member) {
     return false
   }
+  const ownerId = resolveOwnerId(member, guild)
+  if (ownerId) {
+    seedGuildOwner(ownerId)
+  }
   const hasNoKimakiRole = hasBlockedBotRole(member, guild)
   if (hasNoKimakiRole) {
+    return false
+  }
+  const memberId = resolveMemberId(member)
+  if (!isAllowedUserId(memberId)) {
     return false
   }
   if (store.getState().allowAllUsers) {
@@ -57,8 +82,6 @@ export function hasKimakiBotPermission(
     member instanceof GuildMember
       ? member.permissions
       : new PermissionsBitField(BigInt(member.permissions))
-  const ownerId = member instanceof GuildMember ? member.guild.ownerId : guild?.ownerId
-  const memberId = member instanceof GuildMember ? member.id : member.user.id
   const isOwner = ownerId ? memberId === ownerId : false
   const isAdmin = memberPermissions.has(PermissionsBitField.Flags.Administrator)
   const canManageServer = memberPermissions.has(PermissionsBitField.Flags.ManageGuild)
@@ -69,8 +92,8 @@ export function hasKimakiBotPermission(
 /**
  * Stricter permission check that ignores allowAllUsers.
  * Use for admin-only commands like /login and /transcription-key that
- * configure shared credentials. Always requires owner, admin, manage
- * server, or Kimaki role regardless of --allow-all-users flag.
+ * configure shared credentials. Always requires the allowlist plus owner,
+ * admin, manage server, or Kimaki role regardless of --allow-all-users.
  */
 export function hasKimakiAdminPermission(
   member: GuildMemberType | APIInteractionGuildMember | null,
@@ -79,16 +102,22 @@ export function hasKimakiAdminPermission(
   if (!member) {
     return false
   }
+  const ownerId = resolveOwnerId(member, guild)
+  if (ownerId) {
+    seedGuildOwner(ownerId)
+  }
   const hasNoKimaki = hasBlockedBotRole(member, guild)
   if (hasNoKimaki) {
+    return false
+  }
+  const memberId = resolveMemberId(member)
+  if (!isAllowedUserId(memberId)) {
     return false
   }
   const memberPermissions =
     member instanceof GuildMember
       ? member.permissions
       : new PermissionsBitField(BigInt(member.permissions))
-  const ownerId = member instanceof GuildMember ? member.guild.ownerId : guild?.ownerId
-  const memberId = member instanceof GuildMember ? member.id : member.user.id
   const isOwner = ownerId ? memberId === ownerId : false
   const isAdmin = memberPermissions.has(PermissionsBitField.Flags.Administrator)
   const canManageServer = memberPermissions.has(PermissionsBitField.Flags.ManageGuild)

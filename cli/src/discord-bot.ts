@@ -43,7 +43,6 @@ import {
   reactToThread,
   stripMentions,
   hasKimakiBotPermission,
-  hasNoKimakiRole,
   resolveGuildMessageMember,
 } from './discord-utils.js'
 import {
@@ -611,19 +610,10 @@ export async function startDiscordBot({
           return
         }
 
-        if (hasNoKimakiRole(member)) {
-          await message.reply({
-            content: `You have the **no-kimaki** or **no-shuvmaki** role which blocks bot access.\nRemove this role to use shuvmaki.`,
-            flags: SILENT_MESSAGE_FLAGS,
-          })
-          return
-        }
-
         if (!hasKimakiBotPermission(member, message.guild)) {
-          await message.reply({
-            content: `You don't have permission to start sessions.\nTo use shuvmaki, ask a server admin to give you the **shuvmaki** role.`,
-            flags: SILENT_MESSAGE_FLAGS,
-          })
+          discordLogger.log(
+            `[PERMISSION] Ignoring unauthorized user ${member.id}`,
+          )
           return
         }
       }

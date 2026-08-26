@@ -97,6 +97,7 @@ import { notifyError } from './sentry.js'
 import { trackEvent, flushAnalytics } from './analytics.js'
 import { flushDebouncedProcessCallbacks } from './debounced-process-flush.js'
 import { startRuntimeIdleSweeper } from './runtime-idle-sweeper.js'
+import { resolveThreadParentId } from './thread-parent.js'
 import {
   getDefaultKimakiDirectory,
   getUserProjectCount,
@@ -658,10 +659,14 @@ export async function startDiscordBot({
           return
         }
 
-        const parent = thread.parent as TextChannel | null
+        const parentId = await resolveThreadParentId({
+          channelId: thread.id,
+          cachedParentId: thread.parentId,
+          client: discordClient,
+        })
         let projectDirectory: string | undefined
-        if (parent) {
-          const channelConfig = await getChannelDirectory(parent.id)
+        if (parentId) {
+          const channelConfig = await getChannelDirectory(parentId)
           if (channelConfig) {
             projectDirectory = channelConfig.directory
           }
@@ -805,7 +810,7 @@ export async function startDiscordBot({
           thread,
           projectDirectory: resolvedProjectDir,
           sdkDirectory: sdkDir,
-          channelId: parent?.id || undefined,
+          channelId: parentId || undefined,
           appId: currentAppId,
         })
 
@@ -882,7 +887,7 @@ export async function startDiscordBot({
               message,
               thread,
               projectDirectory: resolvedProjectDir,
-              channelId: parent?.id || undefined,
+              channelId: parentId || undefined,
               isCliInjected: isCliInjectedPrompt,
               hasVoiceAttachment,
               appId: currentAppId,

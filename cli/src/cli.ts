@@ -79,7 +79,7 @@ cli
   )
   .option(
     '--allow-all-users',
-    'Allow allowlisted Discord users to start sessions without needing shuvmaki role or admin permissions (allowlist still required; no-kimaki / no-shuvmaki role still blocks)',
+    'Allow all Discord users to start sessions without needing shuvmaki role or admin permissions (no-kimaki / no-shuvmaki role still blocks)',
   )
   .option(
     '--restrict-directories',
@@ -298,7 +298,7 @@ cli
 
         if (options.allowAllUsers) {
           cliLogger.log(
-            'Allow all users: allowlisted Discord members can start sessions without role or admin (allowlist still required; no-kimaki role still blocks)',
+            'Allow all users: any Discord member can start sessions (no-kimaki role still blocks)',
           )
         }
         if (options.restrictDirectories) {

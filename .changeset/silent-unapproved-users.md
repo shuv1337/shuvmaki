@@ -2,8 +2,8 @@
 'kimaki': patch
 ---
 
-Keep unapproved Discord users silent.
+Silently ignore Discord users who do not have the shuvmaki (or kimaki) role.
 
-shuvmaki now requires a durable user-id allowlist (`allowed-users.json`, plus optional `SHUVMAKI_ALLOWED_USER_IDS`) before anyone can use commands or existing threads. Role, admin, owner, and `--allow-all-users` are no longer enough on their own. Unapproved users get no bot reply.
+Slash commands, buttons, select menus, modals, and existing-thread messages no longer send a permission lecture. The bot logs and returns with no Discord reply.
 
 Fixes #3

@@ -9,15 +9,10 @@ import {
   StringSelectMenuInteraction,
   StringSelectMenuBuilder,
   ActionRowBuilder,
-  MessageFlags,
   ChannelType,
   type ThreadChannel,
 } from 'discord.js'
-import {
-  getChannelVerbosity,
-  setChannelVerbosity,
-  type VerbosityLevel,
-} from '../database.js'
+import { getChannelVerbosity, setChannelVerbosity, type VerbosityLevel } from '../database.js'
 import { getDb } from '../db.js'
 import { store } from '../store.js'
 import { createLogger, LogPrefix } from '../logger.js'
@@ -67,9 +62,7 @@ function resolveChannelId(channel: ChatInputCommandInteraction['channel']): stri
  * Check if there is a per-channel verbosity override in the DB.
  * Returns the override value if it exists, null otherwise.
  */
-async function getChannelVerbosityOverride(
-  channelId: string,
-): Promise<VerbosityLevel | null> {
+async function getChannelVerbosityOverride(channelId: string): Promise<VerbosityLevel | null> {
   const db = await getDb()
   const row = await db.query.channel_verbosity.findFirst({
     where: { channel_id: channelId },
@@ -92,11 +85,14 @@ export async function handleVerbosityCommand({
 }): Promise<void> {
   verbosityLogger.log('[VERBOSITY] Command called')
 
+  // Acknowledge before reading SQLite so lock contention cannot expire the
+  // interaction's three-second response window.
+  await command.deferReply()
+
   const channelId = resolveChannelId(command.channel)
   if (!channelId) {
-    await command.reply({
+    await command.editReply({
       content: 'Could not determine channel.',
-      flags: MessageFlags.Ephemeral,
     })
     return
   }
@@ -117,10 +113,9 @@ export async function handleVerbosityCommand({
     .setPlaceholder('Select verbosity level')
     .addOptions(options)
 
-  const actionRow =
-    new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(selectMenu)
+  const actionRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(selectMenu)
 
-  await command.reply({
+  await command.editReply({
     content: `**Verbosity**\nCurrent: \`${currentLevel}\` (${source})`,
     components: [actionRow],
   })

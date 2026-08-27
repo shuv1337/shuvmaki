@@ -189,9 +189,9 @@ describe('system-message', () => {
       - Server Owner
       - Administrator permission
       - Manage Server permission
-      - "shuvmaki" role (case-insensitive)
+      - "shuvmaki", "kimaki", or "clanker" role (case-insensitive)
 
-      Other Discord bots are ignored by default. To allow another bot to trigger sessions (for multi-agent orchestration), assign it the "shuvmaki" role.
+      Other Discord bots are ignored by default. To allow another bot to trigger sessions (for multi-agent orchestration), assign it a "shuvmaki", "kimaki", or "clanker" role.
 
       ## upgrading kimaki
 

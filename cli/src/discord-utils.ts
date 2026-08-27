@@ -36,7 +36,7 @@ const discordLogger = createLogger(LogPrefix.DISCORD)
 /**
  * Centralized permission check for Kimaki bot access.
  * Returns true if the member has permission to use the bot:
- * - Server owner, Administrator, Manage Server, or "shuvmaki"/"kimaki" role
+ * - Server owner, Administrator, Manage Server, or "shuvmaki"/"kimaki"/"clanker" role
  *   (case-insensitive), or allowAllUsers.
  * Returns false if member is null or has the "no-kimaki"/"no-shuvmaki" role.
  */
@@ -122,7 +122,7 @@ export async function resolveGuildMessageMember(
   return fetchedMember
 }
 
-const ALLOWED_BOT_ROLE_NAMES = ['shuvmaki', 'kimaki'] as const
+const ALLOWED_BOT_ROLE_NAMES = ['shuvmaki', 'kimaki', 'clanker'] as const
 const BLOCKED_BOT_ROLE_NAMES = ['no-shuvmaki', 'no-kimaki'] as const
 
 function hasResolvedRoleContext(

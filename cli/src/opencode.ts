@@ -780,6 +780,8 @@ async function startSingleServer({
     ? kimakiShimDirectory
     : ensurePlannotatorCommandShim({ shimDirectory: kimakiShimDirectory })
   const plannotatorCommand = tryWhichCommand('plannotator')
+    || tryExecutablePath('/usr/local/bin/plannotator')
+    || tryExecutablePath(path.join(os.homedir(), '.local', 'bin', 'plannotator'))
   if (plannotatorShim instanceof Error) {
     opencodeLogger.warn(plannotatorShim.message)
   }

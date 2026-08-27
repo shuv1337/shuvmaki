@@ -22,14 +22,14 @@ import {
 } from 'libsqlproxy'
 import { createLogger, LogPrefix } from './logger.js'
 import { ServerStartError, FetchError } from './errors.js'
-import { getDataDir, getLockPort } from './config.js'
-import { getShuvcodeServerAuthSnapshot } from './shuvcode-server-auth.js'
+import { getLockPort } from './config.js'
 import { store } from './store.js'
 // Circular import: opencode.ts → hrana-server.ts → opencode.ts.
 // Safe because both sides only use lazy runtime function calls, never
 // top-level initialization values. The cycle could be broken by moving
 // the port into store.ts, but the current approach is simpler.
 import { getOpencodeServerPort } from './opencode.js'
+import { buildOpencodePortDiscoveryPayload } from './shuvcode-server-auth.js'
 
 const hranaLogger = createLogger(LogPrefix.DB)
 
@@ -181,10 +181,10 @@ export async function startHranaServer({
       res.end(JSON.stringify({ status: 'ok', pid: process.pid }))
       return
     }
-    // OpenCode server port + password discovery — localhost only.
-    // CLI subcommands query this to reuse the bot's running shuvcode server
-    // instead of spawning a redundant second server process. The password is
-    // required because shuvcode serve always authenticates /api/health.
+    // OpenCode server port discovery only. Never include the serve password
+    // here: this listener binds to 0.0.0.0 when KIMAKI_INTERNET_REACHABLE_URL
+    // is set. Credential handoff is the 0600 data-dir file, not this HTTP
+    // route.
     if (pathname === '/kimaki/opencode-port') {
       const port = getOpencodeServerPort()
       if (port === null) {
@@ -192,14 +192,8 @@ export async function startHranaServer({
         res.end(JSON.stringify({ error: 'no_opencode_server' }))
         return
       }
-      const auth = getShuvcodeServerAuthSnapshot({ dataDir: getDataDir() })
       res.writeHead(200, { 'content-type': 'application/json' })
-      res.end(JSON.stringify({
-        port,
-        ...(auth
-          ? { username: auth.username, password: auth.password }
-          : {}),
-      }))
+      res.end(JSON.stringify(buildOpencodePortDiscoveryPayload({ port })))
       return
     }
     // Hrana routes: /v2, /v2/pipeline — require auth

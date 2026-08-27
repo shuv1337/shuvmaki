@@ -10,6 +10,8 @@ import { buildSessionIdAttachReply } from './commands/session-id.js'
 import {
   applyShuvcodeServerAuth,
   buildKimakiAttachCommand,
+  buildKimakiAttachSpawn,
+  buildOpencodePortDiscoveryPayload,
   buildShuvcodeAttachArgs,
   buildShuvcodeAttachEnv,
   buildShuvcodeBasicAuthHeader,
@@ -69,14 +71,16 @@ describe('shuvcode server auth handoff', () => {
     })
   })
 
-  test('parseOpencodePortDiscovery requires a numeric port', () => {
+  test('parseOpencodePortDiscovery requires a numeric port and drops credentials', () => {
+    expect(buildOpencodePortDiscoveryPayload({ port: 4096 })).toEqual({ port: 4096 })
+    expect(Object.keys(buildOpencodePortDiscoveryPayload({ port: 4096 }))).toEqual([
+      'port',
+    ])
     const parsed = parseOpencodePortDiscovery(
       JSON.stringify({ port: 4096, username: 'opencode', password: 'secret' }),
     )
     expect(parsed).toEqual({
       port: 4096,
-      username: 'opencode',
-      password: 'secret',
     })
     expect(parseOpencodePortDiscovery('{"port":"4096"}')).toBeInstanceOf(Error)
   })
@@ -132,26 +136,41 @@ describe('shuvcode server auth handoff', () => {
     expect(buildShuvcodeBasicAuthHeader(auth)).toBe(
       `Basic ${Buffer.from('opencode:never-on-argv').toString('base64')}`,
     )
+    const windowsSpawn = buildKimakiAttachSpawn({
+      resolvedCommand: 'C:\\Program Files\\nodejs\\shuvcode.cmd',
+      serverUrl: 'http://127.0.0.1:4096',
+      sessionId: 'ses_test',
+      directory: 'C:\\Users\\user\\project',
+      auth,
+      env: { PATH: '/bin' },
+      platform: 'win32',
+    })
+    expect(windowsSpawn.windowsVerbatimArguments).toBe(true)
+    expect(windowsSpawn.command).toBe('cmd.exe')
+    expect(windowsSpawn.args).toEqual([
+      '/d',
+      '/s',
+      '/c',
+      '"C:\\Program Files\\nodejs\\shuvcode.cmd"',
+      '--server',
+      'http://127.0.0.1:4096',
+      '--session',
+      'ses_test',
+      'C:\\Users\\user\\project',
+    ])
   })
 
-  test('resolveShuvcodeServerHandoff applies the advertised password', async () => {
+  test('resolveShuvcodeServerHandoff uses the data-dir file and ignores HTTP passwords', async () => {
     const dataDir = makeTempDir()
     const password = 'lock-port-secret'
     const username = 'opencode'
-    const expectedAuth = Buffer.from(`${username}:${password}`).toString('base64')
+    persistShuvcodeServerAuth({
+      dataDir,
+      auth: { username, password },
+    })
 
     const shuvcode = await listen({
-      handler: (req, res) => {
-        if (req.url?.startsWith('/api/health')) {
-          if (req.headers.authorization === `Basic ${expectedAuth}`) {
-            res.writeHead(200, { 'content-type': 'application/json' })
-            res.end(JSON.stringify({ healthy: true }))
-            return
-          }
-          res.writeHead(401)
-          res.end()
-          return
-        }
+      handler: (_req, res) => {
         res.writeHead(404)
         res.end()
       },
@@ -162,8 +181,8 @@ describe('shuvcode server auth handoff', () => {
           res.writeHead(200, { 'content-type': 'application/json' })
           res.end(JSON.stringify({
             port: shuvcode.port,
-            username,
-            password,
+            username: 'attacker',
+            password: 'injected-from-http',
           }))
           return
         }
@@ -193,6 +212,10 @@ describe('shuvcode server auth handoff', () => {
     setDataDir(dataDir)
     const password = 'child-process-secret'
     const username = 'opencode'
+    persistShuvcodeServerAuth({
+      dataDir,
+      auth: { username, password },
+    })
     const expectedAuth = Buffer.from(`${username}:${password}`).toString('base64')
 
     const shuvcode = await listen({
@@ -217,8 +240,6 @@ describe('shuvcode server auth handoff', () => {
           res.writeHead(200, { 'content-type': 'application/json' })
           res.end(JSON.stringify({
             port: shuvcode.port,
-            username,
-            password,
           }))
           return
         }

@@ -1,8 +1,8 @@
 // Cross-process shuvcode serve password handoff.
 // The bot generates OPENCODE_PASSWORD in-process. CLI subcommands and
 // `kimaki attach` run in separate processes, so they must recover the
-// credential without putting it in Discord. Localhost /kimaki/opencode-port
-// advertises it; a 0600 file in the data dir is the fallback.
+// credential without putting it in Discord or on the internet-facing
+// hrana listener. The 0600 file in the data dir is the only handoff.
 
 import fs from 'node:fs'
 import http from 'node:http'
@@ -10,6 +10,7 @@ import os from 'node:os'
 import path from 'node:path'
 import * as errore from 'errore'
 import { FetchError, FilesystemOperationError, ShuvcodeAuthHandoffError } from './errors.js'
+import { getSpawnCommandAndArgs } from './opencode-command.js'
 
 export const SHUVCODE_SERVER_AUTH_FILENAME = 'shuvcode-server-auth.json'
 export const SHUVCODE_SERVER_USERNAME_DEFAULT = 'opencode'
@@ -147,9 +148,11 @@ export function parseOpencodePortDiscovery(body: string) {
   }
   return {
     port: record.port,
-    username: typeof record.username === 'string' ? record.username : undefined,
-    password: typeof record.password === 'string' ? record.password : undefined,
   }
+}
+
+export function buildOpencodePortDiscoveryPayload({ port }: { port: number }) {
+  return { port }
 }
 
 export function isReusableShuvcodeHealthStatus(status: number) {
@@ -224,20 +227,14 @@ export async function resolveShuvcodeServerHandoff({
 }) {
   const discovery = await fetchOpencodePortDiscovery({ lockPort })
   if (discovery instanceof Error) return discovery
-  const discoveredAuth =
-    discovery.password && discovery.password.length > 0
-      ? {
-          username: discovery.username || SHUVCODE_SERVER_USERNAME_DEFAULT,
-          password: discovery.password,
-        }
-      : null
+  // Ignore any password field on the HTTP response. /kimaki/opencode-port
+  // can be reached on 0.0.0.0 when the hrana server is internet-facing.
   const auth =
-    discoveredAuth ||
     readShuvcodeServerAuthFromEnv({ env }) ||
     loadShuvcodeServerAuth({ dataDir })
   if (!auth) {
     return new ShuvcodeAuthHandoffError({
-      reason: 'no password in opencode-port response, env, or data dir',
+      reason: 'no password in env or data-dir handoff file',
     })
   }
   return { port: discovery.port, auth }
@@ -294,5 +291,33 @@ export function buildShuvcodeAttachEnv({
     OPENCODE_PASSWORD: auth.password,
     OPENCODE_SERVER_PASSWORD: auth.password,
     OPENCODE_SERVER_USERNAME: auth.username,
+  }
+}
+
+export function buildKimakiAttachSpawn({
+  resolvedCommand,
+  serverUrl,
+  sessionId,
+  directory,
+  auth,
+  env = process.env,
+  platform,
+}: {
+  resolvedCommand: string
+  serverUrl: string
+  sessionId: string
+  directory: string
+  auth: ShuvcodeServerAuth
+  env?: NodeJS.ProcessEnv
+  platform?: NodeJS.Platform
+}) {
+  const spawned = getSpawnCommandAndArgs({
+    resolvedCommand,
+    baseArgs: buildShuvcodeAttachArgs({ serverUrl, sessionId, directory }),
+    platform,
+  })
+  return {
+    ...spawned,
+    env: buildShuvcodeAttachEnv({ auth, env }),
   }
 }

@@ -22,12 +22,10 @@ import { buildOpencodeEventLogLine } from '../session-handler/opencode-session-e
 import { createDiscordRest } from '../discord-urls.js'
 import { archiveThread, uploadFilesToDiscord, stripMentions } from '../discord-utils.js'
 import { setDataDir, setProjectsDir, getDataDir, getLockPort, getProjectsDir } from '../config.js'
-import { getSpawnCommandAndArgs } from '../opencode-command.js'
 import { resolveOpencodeCommand } from '../opencode.js'
 import {
   applyShuvcodeServerAuth,
-  buildShuvcodeAttachArgs,
-  buildShuvcodeAttachEnv,
+  buildKimakiAttachSpawn,
   resolveShuvcodeServerHandoff,
 } from '../shuvcode-server-auth.js'
 import { execAsync, validateWorktreeDirectory } from '../worktrees.js'
@@ -73,17 +71,17 @@ cli
       process.exit(EXIT_NO_RESTART)
     }
     applyShuvcodeServerAuth({ auth: handoff.auth })
-    const { command, args } = getSpawnCommandAndArgs({
+    const { command, args, windowsVerbatimArguments, env } = buildKimakiAttachSpawn({
       resolvedCommand: resolveOpencodeCommand(),
-      baseArgs: buildShuvcodeAttachArgs({
-        serverUrl: `http://127.0.0.1:${handoff.port}`,
-        sessionId: options.session,
-        directory,
-      }),
+      serverUrl: `http://127.0.0.1:${handoff.port}`,
+      sessionId: options.session,
+      directory,
+      auth: handoff.auth,
     })
     const child = spawn(command, args, {
       stdio: 'inherit',
-      env: buildShuvcodeAttachEnv({ auth: handoff.auth }),
+      env,
+      windowsVerbatimArguments,
     })
     const exitCode = await new Promise<number>((resolve) => {
       child.on('error', (cause) => {

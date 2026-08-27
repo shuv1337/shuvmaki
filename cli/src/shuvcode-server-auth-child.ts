@@ -1,7 +1,7 @@
 // Separate-process helper for shuvcode-server-auth.test.ts.
-// Discovers the bot's serve password via localhost /kimaki/opencode-port
-// and checks /api/health with that credential. Env must not already contain
-// OPENCODE_PASSWORD.
+// Discovers the bot's serve port via localhost /kimaki/opencode-port and
+// the password from the 0600 data-dir file, then checks /api/health.
+// Env must not already contain OPENCODE_PASSWORD.
 
 import { getDataDir, getLockPort, setDataDir } from './config.js'
 import {

@@ -119,7 +119,8 @@ this project is a **hard cutover** to [Latitudes-Dev/shuvcode](https://github.co
 
 - the CLI binary is `shuvcode`. install with `npm install -g shuvcode@latest`.
 - resolve it via `SHUVCODE_PATH` / `OPENCODE_PATH`, then `which shuvcode`, then common shuvcode install paths. do not probe `opencode`.
-- spawn `shuvcode serve --port <n>` only. do not pass `--print-logs` or `--log-level` (v2 serve rejects them).
+- spawn `shuvcode serve --port <n> --log-level warn`. do not pass `--print-logs` (unrecognized) or `--log-level WARN` (must be lowercase).
+- shuvcode serve always requires a password. set `OPENCODE_PASSWORD` / `OPENCODE_SERVER_PASSWORD` (or let `ensureShuvcodeServerPassword()` generate one) and send Basic auth (`opencode:<password>`) on health checks and SDK clients.
 - user-facing attach / MCP auth commands should say `shuvcode`, not `opencode`.
 - if I ask you questions about shuvcode or opencode internals, opensrc `Latitudes-Dev/shuvcode`. do not use anomalyco/opencode as the source of truth.
 

@@ -86,3 +86,20 @@ export function getGatewayProxyRestBaseUrl({ gatewayUrl }: { gatewayUrl: string 
     return gatewayUrl
   }
 }
+
+export function resolveDiscordBaseUrl({
+  isGatewayMode,
+  savedProxyUrl,
+  configuredGatewayUrl,
+}: {
+  isGatewayMode: boolean
+  savedProxyUrl: string | null
+  configuredGatewayUrl?: string
+}): string {
+  if (!isGatewayMode) return 'https://discord.com'
+
+  const gatewayUrl = configuredGatewayUrl || savedProxyUrl
+  return gatewayUrl
+    ? getGatewayProxyRestBaseUrl({ gatewayUrl })
+    : 'https://discord.com'
+}

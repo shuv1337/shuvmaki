@@ -19,6 +19,7 @@ import type {
   WorktreeStatus,
 } from './schema.js'
 import { store } from './store.js'
+import { resolveDiscordBaseUrl } from './discord-urls.js'
 
 const dbLogger = createLogger(LogPrefix.DB)
 
@@ -980,7 +981,11 @@ export async function getBotTokenWithMode(): Promise<{
   const serviceParts = splitServiceAuthToken({ token: gatewayToken })
   const mode: BotMode = row.bot_mode === 'gateway' ? 'gateway' : 'self_hosted'
   const token = mode === 'gateway' && serviceParts ? gatewayToken : row.token
-  const discordBaseUrl = mode === 'gateway' && row.proxy_url ? row.proxy_url : 'https://discord.com'
+  const discordBaseUrl = resolveDiscordBaseUrl({
+    isGatewayMode: mode === 'gateway',
+    savedProxyUrl: row.proxy_url,
+    configuredGatewayUrl: process.env.KIMAKI_GATEWAY_PROXY_URL,
+  })
   store.setState({ discordBaseUrl, gatewayToken })
   return {
     appId: row.app_id,

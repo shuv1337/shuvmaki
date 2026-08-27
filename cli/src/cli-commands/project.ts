@@ -102,7 +102,7 @@ cli
           resolve()
         })
         client.once(Events.Error, reject)
-        void client.login(botToken)
+        client.login(botToken).catch(reject)
       })
 
       cliLogger.log('Finding guild...')

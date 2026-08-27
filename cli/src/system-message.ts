@@ -498,9 +498,9 @@ Only users with these Discord permissions can send messages to the bot:
 - Server Owner
 - Administrator permission
 - Manage Server permission
-- "shuvmaki", "kimaki", or "clanker" role (case-insensitive)
+- "shuvmaki" role (case-insensitive)
 
-Other Discord bots are ignored by default. To allow another bot to trigger sessions (for multi-agent orchestration), assign it a "shuvmaki", "kimaki", or "clanker" role.
+Other Discord bots are ignored by default. To allow another bot to trigger sessions (for multi-agent orchestration), assign it the "shuvmaki" role.
 
 ## upgrading kimaki
 

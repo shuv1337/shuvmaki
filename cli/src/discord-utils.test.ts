@@ -227,26 +227,6 @@ describe('hasKimakiBotPermission', () => {
     expect(hasKimakiBotPermission(member, guild)).toBe(true)
   })
 
-  test('allows API interaction member when clanker role exists', () => {
-    const clankerRoleId = '444'
-    const guild = {
-      ownerId: 'owner-id',
-      roles: {
-        cache: new Map([
-          [clankerRoleId, { id: clankerRoleId, name: 'Clanker' }],
-        ]),
-      },
-    } as any
-
-    const member = {
-      user: { id: 'member-id' },
-      permissions: '0',
-      roles: [clankerRoleId],
-    } as any
-
-    expect(hasKimakiBotPermission(member, guild)).toBe(true)
-  })
-
   test('allows API interaction member with ManageGuild permission', () => {
     const guild = {
       ownerId: 'owner-id',

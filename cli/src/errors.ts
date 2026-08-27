@@ -131,6 +131,11 @@ export class FetchError extends errore.createTaggedError({
   message: 'Fetch failed for $url',
 }) {}
 
+export class ShuvcodeAuthHandoffError extends errore.createTaggedError({
+  name: 'ShuvcodeAuthHandoffError',
+  message: 'Failed to resolve shuvcode server credentials: $reason',
+}) {}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // API ERRORS - External service responses
 // ═══════════════════════════════════════════════════════════════════════════

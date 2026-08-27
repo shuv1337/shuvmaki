@@ -1,4 +1,4 @@
-// /session-id command - Show current session ID and a shuvcode attach command.
+// /session-id command - Show current session ID and a kimaki attach command.
 
 import {
   ChannelType,
@@ -16,15 +16,27 @@ import {
   getOpencodeServerPort,
   initializeOpencodeForDirectory,
 } from '../opencode.js'
+import { getDataDir } from '../config.js'
+import { buildKimakiAttachCommand } from '../shuvcode-server-auth.js'
 import { createLogger, LogPrefix } from '../logger.js'
 
 const logger = createLogger(LogPrefix.SESSION)
 
-function shellQuote(value: string): string {
-  if (!value) {
-    return "''"
-  }
-  return `'${value.replaceAll("'", `'"'"'`)}'`
+export function buildSessionIdAttachReply({
+  sessionId,
+  directory,
+  dataDir,
+}: {
+  sessionId: string
+  directory: string
+  dataDir?: string
+}) {
+  const attachCommand = buildKimakiAttachCommand({
+    sessionId,
+    directory,
+    dataDir,
+  })
+  return `**Session ID:** \`${sessionId}\`\n**Attach command:**\n\`\`\`bash\n${attachCommand}\n\`\`\``
 }
 
 export async function handleSessionIdCommand({
@@ -99,11 +111,12 @@ export async function handleSessionIdCommand({
     return
   }
 
-  const attachUrl = `http://127.0.0.1:${port}`
-  const attachCommand = `shuvcode --server ${attachUrl} --session ${sessionId} ${shellQuote(workingDirectory)}`
-
   await command.editReply({
-    content: `**Session ID:** \`${sessionId}\`\n**Attach command:**\n\`\`\`bash\n${attachCommand}\n\`\`\``,
+    content: buildSessionIdAttachReply({
+      sessionId,
+      directory: workingDirectory,
+      dataDir: getDataDir(),
+    }),
   })
   logger.log(`Session ID shown for thread ${channel.id}: ${sessionId}`)
 }

@@ -69,16 +69,17 @@ describe('shuvcode binary resolution helpers', () => {
     expect(paths.some((candidate) => candidate.includes('opencode'))).toBe(false)
   })
 
-  test('serve args are the v2-safe port pair', () => {
+  test('serve args are only the v2-safe port pair', () => {
     expect(buildShuvcodeServeArgs({ port: 4096 })).toEqual([
       'serve',
       '--port',
       '4096',
-      '--log-level',
-      'warn',
     ])
     expect(buildShuvcodeServeArgs({ port: 4096 }).join(' ')).not.toContain(
       'print-logs',
+    )
+    expect(buildShuvcodeServeArgs({ port: 4096 }).join(' ')).not.toContain(
+      'log-level',
     )
   })
 

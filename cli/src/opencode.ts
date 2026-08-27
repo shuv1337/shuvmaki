@@ -63,6 +63,13 @@ import {
 } from './config.js'
 import { store } from './store.js'
 import { getHranaUrl } from './hrana-server.js'
+import {
+  applyShuvcodeServerAuth,
+  getShuvcodeServerAuthSnapshot,
+  isReusableShuvcodeHealthStatus,
+  persistShuvcodeServerAuth,
+  resolveShuvcodeServerHandoff,
+} from './shuvcode-server-auth.js'
 
 // SDK Config type is simplified; opencode accepts nested permission objects with path patterns
 type PermissionAction = 'ask' | 'allow' | 'deny'
@@ -105,27 +112,41 @@ const opencodeLogger = createLogger(LogPrefix.OPENCODE)
  */
 export function ensureShuvcodeServerPassword({
   env = process.env,
+  dataDir = getDataDir(),
 }: {
   env?: NodeJS.ProcessEnv
+  dataDir?: string
 } = {}): string {
   const existing = env.OPENCODE_PASSWORD || env.OPENCODE_SERVER_PASSWORD
   const password = existing && existing.trim().length > 0
     ? existing
     : randomBytes(32).toString('base64url')
-  env.OPENCODE_PASSWORD = password
-  env.OPENCODE_SERVER_PASSWORD = password
+  const username = env.OPENCODE_SERVER_USERNAME || 'opencode'
+  applyShuvcodeServerAuth({
+    auth: { username, password },
+    env,
+  })
+  const persisted = persistShuvcodeServerAuth({
+    dataDir,
+    auth: { username, password },
+  })
+  if (persisted instanceof Error) {
+    opencodeLogger.warn(
+      `Could not persist shuvcode server password for CLI reuse: ${persisted.message}`,
+    )
+  }
   return password
 }
 
 /**
  * Build Basic auth headers from OPENCODE_SERVER_PASSWORD env var.
+ * Falls back to the 0600 data-dir handoff file when env is unset.
  * Returns empty object when no password is set.
  */
 export function getOpencodeServerAuthHeaders(): Record<string, string> {
-  const serverPassword = process.env.OPENCODE_SERVER_PASSWORD || process.env.OPENCODE_PASSWORD
-  if (!serverPassword) return {}
-  const username = process.env.OPENCODE_SERVER_USERNAME || 'opencode'
-  const encoded = Buffer.from(`${username}:${serverPassword}`).toString('base64')
+  const auth = getShuvcodeServerAuthSnapshot({ dataDir: getDataDir() })
+  if (!auth) return {}
+  const encoded = Buffer.from(`${auth.username}:${auth.password}`).toString('base64')
   return { Authorization: `Basic ${encoded}` }
 }
 
@@ -525,9 +546,9 @@ export function buildShuvcodeServeArgs({
 }: {
   port: number | string
 }): string[] {
-  // shuvcode serve (OpenCode v2) rejects --print-logs. --log-level is a global
-  // flag and must be lowercase (`warn`, not `WARN`).
-  return ['serve', '--port', String(port), '--log-level', 'warn']
+  // Issue #7: spawn only the v2-safe --port flag. Do not pass --print-logs
+  // (unrecognized) or extra global flags such as --log-level.
+  return ['serve', '--port', String(port)]
 }
 
 let resolvedOpencodeCommand: string | null = null
@@ -698,41 +719,38 @@ function ensureOpencodeHomeDirectories({
  */
 async function discoverExistingServer(): Promise<SingleServer | null> {
   const lockPort = getLockPort()
-  try {
-    const portResponse = await requestHealthcheck({
-      url: `http://127.0.0.1:${lockPort}/kimaki/opencode-port`,
-      timeoutMs: 2000,
-    })
-    if (portResponse.status !== 200) {
-      return null
-    }
-    const parsed = JSON.parse(portResponse.body)
-    const port = parsed?.port
-    if (typeof port !== 'number') {
-      return null
-    }
+  const handoff = await resolveShuvcodeServerHandoff({
+    lockPort,
+    dataDir: getDataDir(),
+  })
+  if (handoff instanceof Error) return null
 
-    // Verify the OpenCode server is actually healthy
-    const healthResponse = await requestHealthcheck({
-      url: `http://127.0.0.1:${port}/api/health`,
-      timeoutMs: 2000,
-    })
-    if (healthResponse.status >= 500) {
-      return null
-    }
-
-    opencodeLogger.log(
-      `Discovered existing OpenCode server on port ${port} via hrana lock port ${lockPort}`,
+  applyShuvcodeServerAuth({ auth: handoff.auth })
+  const persisted = persistShuvcodeServerAuth({
+    dataDir: getDataDir(),
+    auth: handoff.auth,
+  })
+  if (persisted instanceof Error) {
+    opencodeLogger.warn(
+      `Could not persist discovered shuvcode server password: ${persisted.message}`,
     )
-    return {
-      process: null,
-      port,
-      baseUrl: `http://127.0.0.1:${port}`,
-      discovered: true,
-    }
-  } catch {
-    // Connection refused or other network error — no bot running
-    return null
+  }
+
+  const healthResponse = await requestHealthcheck({
+    url: `http://127.0.0.1:${handoff.port}/api/health`,
+    timeoutMs: 2000,
+  }).catch((e) => new FetchError({ url: `http://127.0.0.1:${handoff.port}/api/health`, cause: e }))
+  if (healthResponse instanceof Error) return null
+  if (!isReusableShuvcodeHealthStatus(healthResponse.status)) return null
+
+  opencodeLogger.log(
+    `Discovered existing shuvcode server on port ${handoff.port} via hrana lock port ${lockPort}`,
+  )
+  return {
+    process: null,
+    port: handoff.port,
+    baseUrl: `http://127.0.0.1:${handoff.port}`,
+    discovered: true,
   }
 }
 

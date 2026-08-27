@@ -7,6 +7,7 @@ async function parseWithGoke(argv: string[]) {
     "import { goke } from 'goke'",
     'const cli = goke(\'kimaki\')',
     "cli.command('send', 'Send a message').option('-c, --channel <channelId>', 'Discord channel ID').option('--thread <threadId>', 'Thread ID').option('--session <sessionId>', 'Session ID').option('--send-at <schedule>', 'Schedule')",
+    "cli.command('attach', 'Attach').option('--session <sessionId>', 'Session ID').option('--dir <path>', 'Project path').option('--data-dir <path>', 'Data directory')",
     "cli.command('session archive <threadId>', 'Archive a thread')",
     "cli.command('session search <query>', 'Search sessions').option('--channel <channelId>', 'Discord channel ID').option('--project <path>', 'Project path')",
     "cli.command('session export-events-jsonl', 'Export in-memory events to JSONL').option('--session <sessionId>', 'Session ID').option('--out <file>', 'Output path')",
@@ -104,6 +105,26 @@ describe('goke CLI ID parsing', () => {
 
     expect(result.options.guild).toBe(guildId)
     expect(typeof result.options.guild).toBe('string')
+  })
+
+  test('keeps attach session ID as string', async () => {
+    const sessionId = '001111222233334444'
+
+    const result = await parseWithGoke(
+      [
+        'node',
+        'kimaki',
+        'attach',
+        '--session',
+        sessionId,
+        '--dir',
+        '/tmp/project',
+      ],
+    )
+
+    expect(result.options.session).toBe(sessionId)
+    expect(typeof result.options.session).toBe('string')
+    expect(result.options.dir).toBe('/tmp/project')
   })
 
   test('keeps session archive thread ID as string', async () => {

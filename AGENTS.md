@@ -119,9 +119,10 @@ this project is a **hard cutover** to [Latitudes-Dev/shuvcode](https://github.co
 
 - the CLI binary is `shuvcode`. install with `npm install -g shuvcode@latest`.
 - resolve it via `SHUVCODE_PATH` / `OPENCODE_PATH`, then `which shuvcode`, then common shuvcode install paths. do not probe `opencode`.
-- spawn `shuvcode serve --port <n> --log-level warn`. do not pass `--print-logs` (unrecognized) or `--log-level WARN` (must be lowercase).
+- spawn `shuvcode serve --port <n>` only. do not pass `--print-logs` (unrecognized) or extra global flags such as `--log-level`.
 - shuvcode serve always requires a password. set `OPENCODE_PASSWORD` / `OPENCODE_SERVER_PASSWORD` (or let `ensureShuvcodeServerPassword()` generate one) and send Basic auth (`opencode:<password>`) on health checks and SDK clients.
-- user-facing attach / MCP auth commands should say `shuvcode`, not `opencode`.
+- persist the generated password to `<dataDir>/shuvcode-server-auth.json` (0600) and advertise `{ port, username, password }` on localhost `/kimaki/opencode-port` so CLI processes can reuse the bot's server. never treat a 401 health response as a reusable server.
+- user-facing attach is `kimaki attach --session <id> --dir <dir>`. do not put the serve password in Discord. MCP auth prompts should say `shuvcode`, not `opencode`.
 - if I ask you questions about shuvcode or opencode internals, opensrc `Latitudes-Dev/shuvcode`. do not use anomalyco/opencode as the source of truth.
 
 ## opencode SDK

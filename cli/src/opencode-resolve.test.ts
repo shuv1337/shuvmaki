@@ -3,6 +3,8 @@ import { describe, expect, test } from 'vitest'
 import {
   SHUVCODE_BIN_NAME,
   buildShuvcodeServeArgs,
+  ensureShuvcodeServerPassword,
+  getOpencodeServerAuthHeaders,
   getShuvcodeCandidatePaths,
   getShuvcodePathOverride,
 } from './opencode.js'
@@ -72,13 +74,46 @@ describe('shuvcode binary resolution helpers', () => {
       'serve',
       '--port',
       '4096',
+      '--log-level',
+      'warn',
     ])
     expect(buildShuvcodeServeArgs({ port: 4096 }).join(' ')).not.toContain(
       'print-logs',
     )
-    expect(buildShuvcodeServeArgs({ port: 4096 }).join(' ')).not.toContain(
-      'log-level',
-    )
+  })
+
+  test('generates a shared server password when none is set', () => {
+    const env: NodeJS.ProcessEnv = {}
+    const password = ensureShuvcodeServerPassword({ env })
+    expect(password.length).toBeGreaterThan(16)
+    expect(env.OPENCODE_PASSWORD).toBe(password)
+    expect(env.OPENCODE_SERVER_PASSWORD).toBe(password)
+  })
+
+  test('reuses OPENCODE_PASSWORD when already set', () => {
+    const env: NodeJS.ProcessEnv = { OPENCODE_PASSWORD: 'existing-secret' }
+    expect(ensureShuvcodeServerPassword({ env })).toBe('existing-secret')
+    expect(env.OPENCODE_SERVER_PASSWORD).toBe('existing-secret')
+  })
+
+  test('auth headers use the opencode username and password', () => {
+    const previousPassword = process.env.OPENCODE_SERVER_PASSWORD
+    const previousUser = process.env.OPENCODE_SERVER_USERNAME
+    process.env.OPENCODE_SERVER_PASSWORD = 'secret'
+    delete process.env.OPENCODE_SERVER_USERNAME
+    expect(getOpencodeServerAuthHeaders()).toEqual({
+      Authorization: `Basic ${Buffer.from('opencode:secret').toString('base64')}`,
+    })
+    if (previousPassword === undefined) {
+      delete process.env.OPENCODE_SERVER_PASSWORD
+    } else {
+      process.env.OPENCODE_SERVER_PASSWORD = previousPassword
+    }
+    if (previousUser === undefined) {
+      delete process.env.OPENCODE_SERVER_USERNAME
+    } else {
+      process.env.OPENCODE_SERVER_USERNAME = previousUser
+    }
   })
 
   test('binary name is shuvcode', () => {

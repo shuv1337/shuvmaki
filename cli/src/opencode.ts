@@ -35,6 +35,7 @@
 // Uses errore for type-safe error handling.
 
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process'
+import { randomBytes } from 'node:crypto'
 import fs from 'node:fs'
 import http from 'node:http'
 import net from 'node:net'
@@ -98,11 +99,30 @@ import { computeSkillPermission } from './skill-filter.js'
 const opencodeLogger = createLogger(LogPrefix.OPENCODE)
 
 /**
+ * shuvcode serve always requires a password. Honor an existing
+ * OPENCODE_PASSWORD / OPENCODE_SERVER_PASSWORD, otherwise generate one and
+ * keep both names in sync (the fork still reads both).
+ */
+export function ensureShuvcodeServerPassword({
+  env = process.env,
+}: {
+  env?: NodeJS.ProcessEnv
+} = {}): string {
+  const existing = env.OPENCODE_PASSWORD || env.OPENCODE_SERVER_PASSWORD
+  const password = existing && existing.trim().length > 0
+    ? existing
+    : randomBytes(32).toString('base64url')
+  env.OPENCODE_PASSWORD = password
+  env.OPENCODE_SERVER_PASSWORD = password
+  return password
+}
+
+/**
  * Build Basic auth headers from OPENCODE_SERVER_PASSWORD env var.
  * Returns empty object when no password is set.
  */
 export function getOpencodeServerAuthHeaders(): Record<string, string> {
-  const serverPassword = process.env.OPENCODE_SERVER_PASSWORD
+  const serverPassword = process.env.OPENCODE_SERVER_PASSWORD || process.env.OPENCODE_PASSWORD
   if (!serverPassword) return {}
   const username = process.env.OPENCODE_SERVER_USERNAME || 'opencode'
   const encoded = Buffer.from(`${username}:${serverPassword}`).toString('base64')
@@ -144,6 +164,7 @@ export async function requestHealthcheck({
         method: 'GET',
         headers: {
           connection: 'close',
+          ...getOpencodeServerAuthHeaders(),
         },
       },
       (res) => {
@@ -504,9 +525,9 @@ export function buildShuvcodeServeArgs({
 }: {
   port: number | string
 }): string[] {
-  // shuvcode serve (OpenCode v2) only accepts --hostname, --port, --service,
-  // and --stdio. Upstream v1 flags like --print-logs / --log-level are rejected.
-  return ['serve', '--port', String(port)]
+  // shuvcode serve (OpenCode v2) rejects --print-logs. --log-level is a global
+  // flag and must be lowercase (`warn`, not `WARN`).
+  return ['serve', '--port', String(port), '--log-level', 'warn']
 }
 
 let resolvedOpencodeCommand: string | null = null
@@ -625,6 +646,10 @@ async function waitForServer({
       // Connection refused or other transient errors - continue polling.
       // Use 100ms interval instead of 1s so we detect readiness faster.
       // Critical for scale-to-zero cold starts where every ms matters.
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      continue
+    }
+    if (response.status === 401 || response.status === 403) {
       await new Promise((resolve) => setTimeout(resolve, 100))
       continue
     }
@@ -757,6 +782,7 @@ async function startSingleServer({
   ensureProcessCleanupHandlersRegistered()
 
   const port = await getOpenPort()
+  ensureShuvcodeServerPassword()
 
   const serveArgs = buildShuvcodeServeArgs({ port })
 

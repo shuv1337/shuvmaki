@@ -1,14 +1,14 @@
-// E2e test for OpenCode plugin loading.
-// Spawns `opencode serve` directly with our plugin in OPENCODE_CONFIG_CONTENT,
+// E2e test for shuvcode plugin loading.
+// Spawns `shuvcode serve` directly with our plugin in OPENCODE_CONFIG_CONTENT,
 // waits for the health endpoint, then checks stderr for plugin errors.
-// No Discord infrastructure needed — just the OpenCode server process.
+// No Discord infrastructure needed — just the shuvcode server process.
 
 import { spawn, type ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { test, expect } from 'vitest'
-import { resolveOpencodeCommand } from './opencode.js'
+import { buildShuvcodeServeArgs, resolveOpencodeCommand } from './opencode.js'
 import { getSpawnCommandAndArgs } from './opencode-command.js'
 import { chooseLockPort } from './test-utils.js'
 
@@ -66,7 +66,7 @@ test(
       windowsVerbatimArguments,
     } = getSpawnCommandAndArgs({
       resolvedCommand: resolveOpencodeCommand(),
-      baseArgs: ['serve', '--port', port.toString(), '--print-logs', '--log-level', 'DEBUG'],
+      baseArgs: buildShuvcodeServeArgs({ port }),
     })
 
     const serverProcess: ChildProcess = spawn(command, args, {

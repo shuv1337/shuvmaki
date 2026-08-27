@@ -418,7 +418,7 @@ export async function registerCommands({
     new SlashCommandBuilder()
       .setName('session-id')
       .setDescription(
-        truncateCommandDescription('Show current session ID and opencode attach command for this thread'),
+        truncateCommandDescription('Show current session ID and shuvcode attach command for this thread'),
       )
       .setDMPermission(false)
       .toJSON(),

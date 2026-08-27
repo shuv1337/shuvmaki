@@ -447,21 +447,67 @@ function ensureProcessCleanupHandlersRegistered(): void {
   })
 }
 
-// ── Resolve opencode binary ──────────────────────────────────────
-// Resolve the full path to the opencode binary so we can spawn without
+// ── Resolve shuvcode binary ──────────────────────────────────────
+// Resolve the full path to the shuvcode binary so we can spawn without
 // shell: true. Using shell: true creates an intermediate sh process — when
-// cleanup sends SIGTERM it only kills the shell, leaving the actual opencode
+// cleanup sends SIGTERM it only kills the shell, leaving the actual shuvcode
 // process orphaned (reparented to PID 1). Resolving the path upfront lets
 // us spawn the binary directly and SIGTERM reaches the right process.
 //
-// Resolution order:
-// 1. OPENCODE_PATH env var (explicit user override)
-// 2. `which shuvcode` then `which opencode` (prefer this fork's CLI)
-// 3. Common install locations for shuvcode, then opencode
-// 4. Fall back to bare "opencode" (spawn will fail with a clear error)
+// This project is shuvcode-only (Latitudes-Dev/shuvcode, OpenCode v2).
+// Upstream `opencode` is never discovered or installed.
 //
-// OpenCode/shuvcode must be installed globally before running shuvmaki. The bot
+// Resolution order:
+// 1. SHUVCODE_PATH, then OPENCODE_PATH (explicit override; the fork still
+//    uses OPENCODE_* env names internally)
+// 2. `which shuvcode`
+// 3. Common shuvcode install locations
+// 4. Fall back to bare "shuvcode" (spawn will fail with a clear error)
+//
+// shuvcode must be installed globally before running shuvmaki. The bot
 // startup checks for it via ensureCommandAvailable and prompts to install if missing.
+
+export const SHUVCODE_BIN_NAME = 'shuvcode'
+
+export function getShuvcodePathOverride({
+  env = process.env,
+}: {
+  env?: NodeJS.ProcessEnv
+} = {}): string | undefined {
+  const override = env.SHUVCODE_PATH || env.OPENCODE_PATH
+  return override && override.trim().length > 0 ? override : undefined
+}
+
+export function getShuvcodeCandidatePaths({
+  home,
+  platform = process.platform,
+}: {
+  home: string
+  platform?: NodeJS.Platform
+}): string[] {
+  if (platform === 'win32') {
+    return [
+      path.join(home, '.local', 'bin', `${SHUVCODE_BIN_NAME}.exe`),
+      path.join(home, '.bun', 'bin', `${SHUVCODE_BIN_NAME}.exe`),
+      path.join(home, 'AppData', 'Roaming', 'npm', `${SHUVCODE_BIN_NAME}.cmd`),
+    ]
+  }
+  return [
+    path.join(home, '.bun', 'bin', SHUVCODE_BIN_NAME),
+    path.join(home, '.local', 'bin', SHUVCODE_BIN_NAME),
+    path.join('/usr', 'local', 'bin', SHUVCODE_BIN_NAME),
+  ]
+}
+
+export function buildShuvcodeServeArgs({
+  port,
+}: {
+  port: number | string
+}): string[] {
+  // shuvcode serve (OpenCode v2) only accepts --hostname, --port, --service,
+  // and --stdio. Upstream v1 flags like --print-logs / --log-level are rejected.
+  return ['serve', '--port', String(port)]
+}
 
 let resolvedOpencodeCommand: string | null = null
 
@@ -505,7 +551,7 @@ export function resolveOpencodeCommand(): string {
     return resolvedOpencodeCommand
   }
 
-  const envPath = process.env.OPENCODE_PATH
+  const envPath = getShuvcodePathOverride()
   if (envPath) {
     const resolvedFromEnv = selectResolvedCommand({
       output: envPath,
@@ -517,48 +563,27 @@ export function resolveOpencodeCommand(): string {
     }
   }
 
-  for (const name of ['shuvcode', 'opencode'] as const) {
-    const resolved = tryWhichCommand(name)
-    if (resolved) {
-      resolvedOpencodeCommand = resolved
-      opencodeLogger.log(`Resolved opencode binary: ${resolved}`)
-      return resolved
-    }
+  const resolved = tryWhichCommand(SHUVCODE_BIN_NAME)
+  if (resolved) {
+    resolvedOpencodeCommand = resolved
+    opencodeLogger.log(`Resolved shuvcode binary: ${resolved}`)
+    return resolved
   }
 
   const home = process.env.HOME || process.env.USERPROFILE || ''
-  const extraPaths: string[] = [
-    path.join(home, '.bun', 'bin', 'shuvcode'),
-    path.join(home, '.local', 'bin', 'shuvcode'),
-    path.join('/usr', 'local', 'bin', 'shuvcode'),
-    path.join(home, '.bun', 'bin', 'opencode'),
-    path.join(home, '.local', 'bin', 'opencode'),
-    path.join(home, '.opencode', 'bin', 'opencode'),
-    path.join('/usr', 'local', 'bin', 'opencode'),
-    path.join('/opt', 'opencode', 'bin', 'opencode'),
-  ]
-  if (process.platform === 'win32') {
-    extraPaths.push(
-      path.join(home, '.local', 'bin', 'shuvcode.exe'),
-      path.join(home, '.bun', 'bin', 'shuvcode.exe'),
-      path.join(home, '.local', 'bin', 'opencode.exe'),
-      path.join(home, 'AppData', 'Local', 'opencode', 'opencode.exe'),
-      path.join(home, '.opencode', 'bin', 'opencode.exe'),
-    )
-  }
-  for (const extraPath of extraPaths) {
-    const resolved = tryExecutablePath(extraPath)
-    if (resolved) {
-      resolvedOpencodeCommand = resolved
-      opencodeLogger.log(`Resolved opencode binary: ${resolved}`)
-      return resolved
+  for (const extraPath of getShuvcodeCandidatePaths({ home })) {
+    const resolvedPath = tryExecutablePath(extraPath)
+    if (resolvedPath) {
+      resolvedOpencodeCommand = resolvedPath
+      opencodeLogger.log(`Resolved shuvcode binary: ${resolvedPath}`)
+      return resolvedPath
     }
   }
 
   opencodeLogger.warn(
-    'Could not resolve shuvcode/opencode path via which, falling back to "opencode"',
+    'Could not resolve shuvcode path via which, falling back to "shuvcode"',
   )
-  return 'opencode'
+  return SHUVCODE_BIN_NAME
 }
 async function getOpenPort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -733,14 +758,7 @@ async function startSingleServer({
 
   const port = await getOpenPort()
 
-  const serveArgs = [
-    'serve',
-    '--port',
-    port.toString(),
-    '--print-logs',
-    '--log-level',
-    'WARN',
-  ]
+  const serveArgs = buildShuvcodeServeArgs({ port })
 
   const {
     command: spawnCommand,

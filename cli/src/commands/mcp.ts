@@ -272,7 +272,7 @@ export async function handleMcpSelectMenu(
 
   if (serverInfo.status === 'needs_auth') {
     await interaction.editReply({
-      content: `**${serverName}** needs authentication.\nRun \`opencode\` in the project directory to complete the OAuth flow.`,
+      content: `**${serverName}** needs authentication.\nRun \`shuvcode\` in the project directory to complete the OAuth flow.`,
       components: [],
     })
     return

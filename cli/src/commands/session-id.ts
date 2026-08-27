@@ -1,4 +1,4 @@
-// /session-id command - Show current session ID and an opencode attach command.
+// /session-id command - Show current session ID and a shuvcode attach command.
 
 import {
   ChannelType,
@@ -85,7 +85,7 @@ export async function handleSessionIdCommand({
     const getClient = await initializeOpencodeForDirectory(projectDirectory)
     if (getClient instanceof Error) {
       await command.editReply({
-        content: `Session ID: \`${sessionId}\`\nFailed to resolve OpenCode server port: ${getClient.message}`,
+        content: `Session ID: \`${sessionId}\`\nFailed to resolve shuvcode server port: ${getClient.message}`,
       })
       return
     }
@@ -94,13 +94,13 @@ export async function handleSessionIdCommand({
 
   if (!port) {
     await command.editReply({
-      content: `Session ID: \`${sessionId}\`\nCould not determine OpenCode server port`,
+      content: `Session ID: \`${sessionId}\`\nCould not determine shuvcode server port`,
     })
     return
   }
 
   const attachUrl = `http://127.0.0.1:${port}`
-  const attachCommand = `opencode attach ${attachUrl} --session ${sessionId} --dir ${shellQuote(workingDirectory)}`
+  const attachCommand = `shuvcode --server ${attachUrl} --session ${sessionId} ${shellQuote(workingDirectory)}`
 
   await command.editReply({
     content: `**Session ID:** \`${sessionId}\`\n**Attach command:**\n\`\`\`bash\n${attachCommand}\n\`\`\``,

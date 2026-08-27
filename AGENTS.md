@@ -113,9 +113,19 @@ use `--gateway` to force gateway mode even if self-hosted credentials are alread
 
 `db` is a devDependency of `cli`. this means cli can only import **types** from `db`, not runtime values. use `import type { ... } from 'db/...'` in cli code. website has `db` as a normal dependency so it can import runtime values (functions, classes, etc.).
 
+## shuvcode
+
+this project is a **hard cutover** to [Latitudes-Dev/shuvcode](https://github.com/Latitudes-Dev/shuvcode) (OpenCode v2). never install, spawn, or fall back to upstream `opencode`.
+
+- the CLI binary is `shuvcode`. install with `npm install -g shuvcode@latest`.
+- resolve it via `SHUVCODE_PATH` / `OPENCODE_PATH`, then `which shuvcode`, then common shuvcode install paths. do not probe `opencode`.
+- spawn `shuvcode serve --port <n>` only. do not pass `--print-logs` or `--log-level` (v2 serve rejects them).
+- user-facing attach / MCP auth commands should say `shuvcode`, not `opencode`.
+- if I ask you questions about shuvcode or opencode internals, opensrc `Latitudes-Dev/shuvcode`. do not use anomalyco/opencode as the source of truth.
+
 ## opencode SDK
 
-always import from `@opencode-ai/sdk/v2`, never from `@opencode-ai/sdk` (v1). the v2 SDK uses flat parameters instead of nested `path`/`query`/`body` objects. for example:
+the HTTP client still imports from `@opencode-ai/sdk/v2` (the published 1.x package's flat v2 API). never import from `@opencode-ai/sdk` (v1 nested params). the v2 SDK uses flat parameters instead of nested `path`/`query`/`body` objects. for example:
 
 - `session.get({ sessionID: id })` not `session.get({ path: { id } })`
 - `session.messages({ sessionID: id, directory })` not `session.messages({ path: { id }, query: { directory } })`
@@ -293,10 +303,6 @@ errore is a submodule. should always be in main. make sure it is never in detach
 it is a package for using errors as values in ts.
 
 this whole codebase uses errore.org conventions. ALWAYS read the errore skill before editing any code.
-
-## opencode
-
-if I ask you questions about opencode you can opensrc it from anomalyco/opencode
 
 ## discord bot messages
 
@@ -545,7 +551,7 @@ see `docs/e2e-testing-learnings.md` for detailed lessons. key points:
 
 ## event handler architecture
 
-our event handler should follow closely what opencode tui does. you can find opencode source code in opensrc folder. opensrc anomalyco/opencode. notice opencode-ai/opencode is a different unrelated repo. ignore that
+our event handler should follow closely what the shuvcode/opencode tui does. you can find the source in opensrc folder. opensrc Latitudes-Dev/shuvcode. do not use anomalyco/opencode or opencode-ai/opencode as the source of truth.
 
 see `packages/app/src/components/prompt-input/submit.ts` for where opencode tui calls promptAsync
 

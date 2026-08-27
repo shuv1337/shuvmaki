@@ -7,9 +7,9 @@
     <br/>
 </div>
 
-> **Fork notice:** [shuvmaki](https://github.com/shuv1337/shuvmaki) is a fork of [kimaki](https://github.com/remorses/kimaki). User-facing branding is shuvmaki. The npm package name, OpenCode kimaki protocol, and `~/.kimaki` data directory stay as kimaki for compatibility.
+> **Fork notice:** [shuvmaki](https://github.com/shuv1337/shuvmaki) is a fork of [kimaki](https://github.com/remorses/kimaki). User-facing branding is shuvmaki. The npm package name, kimaki protocol, and `~/.kimaki` data directory stay as kimaki for compatibility. The coding agent is **[shuvcode](https://github.com/Latitudes-Dev/shuvcode)** (our OpenCode v2 fork), not upstream OpenCode.
 
-shuvmaki is a **collaborative agent orchestrator** that lets you drive every feature of [OpenCode](https://opencode.ai) from Discord. Each Discord **channel is a project**, each **thread is a coding session**. Send a message, an AI agent edits code on your machine.
+shuvmaki is a **collaborative agent orchestrator** that lets you drive every feature of [shuvcode](https://github.com/Latitudes-Dev/shuvcode) from Discord. Each Discord **channel is a project**, each **thread is a coding session**. Send a message, an AI agent edits code on your machine.
 
 ## Quick Start
 
@@ -24,10 +24,10 @@ The CLI walks you through everything. Name the Discord application **shuvmaki** 
 
 ## What is shuvmaki?
 
-shuvmaki turns Discord into the control surface for your coding agents. It connects to [OpenCode](https://opencode.ai), a coding agent similar to Claude Code, and maps your work onto Discord's natural structure:
+shuvmaki turns Discord into the control surface for your coding agents. It connects to [shuvcode](https://github.com/Latitudes-Dev/shuvcode), our OpenCode v2 coding agent, and maps your work onto Discord's natural structure:
 
 - **Channels are projects.** Each channel is linked to a project directory on your machine.
-- **Threads are sessions.** Every message you send starts a thread that maps to one OpenCode session.
+- **Threads are sessions.** Every message you send starts a thread that maps to one shuvcode session.
 
 This separation is the whole point. Other Discord/iMessage agent tools cram **everything into a single channel**, so sessions pile on top of each other with no clean way to partition them. shuvmaki splits **projects into channels** and **sessions into threads**, so each piece of work has its own place. Switch projects by switching channels. Switch tasks by switching threads. Search, resume, and fork any of them later.
 

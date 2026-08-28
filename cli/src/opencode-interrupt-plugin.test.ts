@@ -26,9 +26,13 @@ type AbortCall = { sessionID: string }
 type PromptAsyncCall = {
   sessionID: string
   messageID?: string
+  id?: string
+  text?: string
   parts?: unknown
   agent?: string
+  agents?: Array<{ name: string }>
   model?: { providerID: string; modelID: string }
+  metadata?: Record<string, unknown>
 }
 
 // A tiny stand-in opencode server. Records abort/prompt_async calls and serves
@@ -386,6 +390,9 @@ describe('interruptOpencodeSessionOnUserMessage', () => {
         id: messageID,
         text: 'user message',
         agents: [{ name: 'plan' }],
+        metadata: {
+          model: { providerID: 'anthropic', modelID: 'claude' },
+        },
       },
     ])
   })

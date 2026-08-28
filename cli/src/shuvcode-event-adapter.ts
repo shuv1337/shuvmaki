@@ -2,8 +2,8 @@
 // shapes the Discord runtime already understands.
 //
 // shuvcode emits `{ type, data }` (`session.text.ended`, `session.tool.called`).
-// The bot's event sourcing reads `{ type, properties }` (`message.part.updated`,
-// `session.status`, `session.idle`).
+// The bot's event sourcing reads `{ type, properties }` (`message.updated`,
+// `message.part.updated`, `session.status`, `session.idle`).
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
@@ -49,6 +49,13 @@ function partUpdated(part: Record<string, unknown>) {
   }
 }
 
+function messageUpdated(info: Record<string, unknown>) {
+  return {
+    type: 'message.updated',
+    properties: { info },
+  }
+}
+
 function sessionStatus({
   sessionID,
   type,
@@ -72,7 +79,158 @@ function sessionIdle(sessionID: string) {
   }
 }
 
-export function translateShuvcodeEvent(event: unknown): unknown[] {
+function emptyTokens() {
+  return {
+    input: 0,
+    output: 0,
+    reasoning: 0,
+    cache: { read: 0, write: 0 },
+  }
+}
+
+function readTokens(value: unknown) {
+  if (!isRecord(value)) return emptyTokens()
+  const cache = isRecord(value.cache) ? value.cache : {}
+  return {
+    input: asNumber(value.input) ?? 0,
+    output: asNumber(value.output) ?? 0,
+    reasoning: asNumber(value.reasoning) ?? 0,
+    cache: {
+      read: asNumber(cache.read) ?? 0,
+      write: asNumber(cache.write) ?? 0,
+    },
+  }
+}
+
+function readModel(value: unknown): { id: string; providerID: string } | undefined {
+  if (!isRecord(value)) return undefined
+  const id = asString(value.id) ?? asString(value.modelID)
+  const providerID = asString(value.providerID)
+  if (!id || !providerID) return undefined
+  return { id, providerID }
+}
+
+export type ShuvcodeEventTranslateState = {
+  lastUserMessageIdBySession: Map<string, string>
+  lastAssistantBySession: Map<
+    string,
+    {
+      id: string
+      agent?: string
+      modelID?: string
+      providerID?: string
+    }
+  >
+}
+
+export function createShuvcodeEventTranslateState(): ShuvcodeEventTranslateState {
+  return {
+    lastUserMessageIdBySession: new Map(),
+    lastAssistantBySession: new Map(),
+  }
+}
+
+export type ShuvcodeEventTranslator = (event: unknown) => unknown[]
+
+export function createShuvcodeEventTranslator(): ShuvcodeEventTranslator {
+  const state = createShuvcodeEventTranslateState()
+  return (event) => translateShuvcodeEvent(event, state)
+}
+
+function userMessageInfo({
+  sessionID,
+  messageID,
+  created,
+  agent,
+}: {
+  sessionID: string
+  messageID: string
+  created: number
+  agent?: string
+}) {
+  return {
+    id: messageID,
+    sessionID,
+    role: 'user',
+    time: { created },
+    ...(agent ? { agent } : {}),
+  }
+}
+
+function assistantMessageInfo({
+  sessionID,
+  messageID,
+  created,
+  completed,
+  parentID,
+  agent,
+  modelID,
+  providerID,
+  tokens,
+  finish,
+}: {
+  sessionID: string
+  messageID: string
+  created: number
+  completed?: number
+  parentID?: string
+  agent?: string
+  modelID?: string
+  providerID?: string
+  tokens?: ReturnType<typeof readTokens>
+  finish?: string
+}) {
+  return {
+    id: messageID,
+    sessionID,
+    role: 'assistant',
+    parentID,
+    modelID,
+    providerID,
+    mode: agent,
+    agent,
+    time: completed === undefined ? { created } : { created, completed },
+    cost: 0,
+    tokens: tokens ?? emptyTokens(),
+    ...(finish ? { finish } : {}),
+  }
+}
+
+function rememberUserMessage({
+  state,
+  sessionID,
+  messageID,
+}: {
+  state: ShuvcodeEventTranslateState
+  sessionID: string
+  messageID: string
+}) {
+  state.lastUserMessageIdBySession.set(sessionID, messageID)
+}
+
+function ensureUserMessage({
+  state,
+  sessionID,
+  created,
+}: {
+  state: ShuvcodeEventTranslateState
+  sessionID: string
+  created: number
+}): { id: string; events: unknown[] } {
+  const existing = state.lastUserMessageIdBySession.get(sessionID)
+  if (existing) return { id: existing, events: [] }
+  const id = `user-${sessionID}-${created}`
+  rememberUserMessage({ state, sessionID, messageID: id })
+  return {
+    id,
+    events: [messageUpdated(userMessageInfo({ sessionID, messageID: id, created }))],
+  }
+}
+
+export function translateShuvcodeEvent(
+  event: unknown,
+  state: ShuvcodeEventTranslateState = createShuvcodeEventTranslateState(),
+): unknown[] {
   if (!isRecord(event) || typeof event.type !== 'string') return []
   if ('properties' in event && event.properties !== undefined) return [event]
 
@@ -112,6 +270,50 @@ export function translateShuvcodeEvent(event: unknown): unknown[] {
         },
       ]
     }
+    case 'session.inbox.enqueued':
+    case 'session.inbox.delivered': {
+      if (!sessionID) return []
+      const inboxID = asString(data.inboxID)
+      const item = isRecord(data.item) ? data.item : {}
+      if (!inboxID || (item.type && item.type !== 'user')) return []
+      rememberUserMessage({ state, sessionID, messageID: inboxID })
+      const payload = isRecord(item.payload) ? item.payload : {}
+      const agents = Array.isArray(payload.agents) ? payload.agents : []
+      const firstAgent = isRecord(agents[0]) ? asString(agents[0].name) : undefined
+      return [
+        messageUpdated(
+          userMessageInfo({
+            sessionID,
+            messageID: inboxID,
+            created,
+            agent: firstAgent,
+          }),
+        ),
+      ]
+    }
+    case 'session.agent.selected': {
+      if (!sessionID) return []
+      const current = state.lastAssistantBySession.get(sessionID)
+      state.lastAssistantBySession.set(sessionID, {
+        id: current?.id ?? '',
+        agent: asString(data.agent),
+        modelID: current?.modelID,
+        providerID: current?.providerID,
+      })
+      return []
+    }
+    case 'session.model.selected': {
+      if (!sessionID) return []
+      const model = readModel(data.model)
+      const current = state.lastAssistantBySession.get(sessionID)
+      state.lastAssistantBySession.set(sessionID, {
+        id: current?.id ?? '',
+        agent: current?.agent,
+        modelID: model?.id,
+        providerID: model?.providerID,
+      })
+      return []
+    }
     case 'session.execution.started':
       return sessionID ? [sessionStatus({ sessionID, type: 'busy' })] : []
     case 'session.execution.succeeded':
@@ -123,7 +325,28 @@ export function translateShuvcodeEvent(event: unknown): unknown[] {
     case 'session.step.started': {
       const messageID = asString(data.assistantMessageID)
       if (!sessionID || !messageID) return []
+      const model = readModel(data.model)
+      const agent = asString(data.agent)
+      const user = ensureUserMessage({ state, sessionID, created })
+      state.lastAssistantBySession.set(sessionID, {
+        id: messageID,
+        agent,
+        modelID: model?.id,
+        providerID: model?.providerID,
+      })
       return [
+        ...user.events,
+        messageUpdated(
+          assistantMessageInfo({
+            sessionID,
+            messageID,
+            created,
+            parentID: user.id,
+            agent,
+            modelID: model?.id,
+            providerID: model?.providerID,
+          }),
+        ),
         sessionStatus({ sessionID, type: 'busy' }),
         partUpdated({
           id: `step-start-${messageID}`,
@@ -131,6 +354,30 @@ export function translateShuvcodeEvent(event: unknown): unknown[] {
           messageID,
           type: 'step-start',
         }),
+      ]
+    }
+    case 'session.step.ended': {
+      const messageID = asString(data.assistantMessageID)
+      if (!sessionID || !messageID) return []
+      const remembered = state.lastAssistantBySession.get(sessionID)
+      const parentID = state.lastUserMessageIdBySession.get(sessionID)
+      const tokens = readTokens(data.tokens)
+      const finish = asString(data.finish)
+      return [
+        messageUpdated(
+          assistantMessageInfo({
+            sessionID,
+            messageID,
+            created,
+            completed: created,
+            parentID,
+            agent: remembered?.agent ?? asString(data.agent),
+            modelID: remembered?.modelID,
+            providerID: remembered?.providerID,
+            tokens,
+            finish,
+          }),
+        ),
       ]
     }
     case 'session.text.ended': {
@@ -258,7 +505,10 @@ export function translateShuvcodeEvent(event: unknown): unknown[] {
   }
 }
 
-export function rewriteSseBlock(block: string): string {
+export function rewriteSseBlock(
+  block: string,
+  translate: ShuvcodeEventTranslator = translateShuvcodeEvent,
+): string {
   const lines = block.split('\n')
   const dataLines: string[] = []
   const other: string[] = []
@@ -276,7 +526,7 @@ export function rewriteSseBlock(block: string): string {
   } catch {
     return block
   }
-  const events = translateShuvcodeEvent(parsed)
+  const events = translate(parsed)
   if (events.length === 0) return block
   return events
     .map((event) => [...other, `data: ${JSON.stringify(event)}`].join('\n'))

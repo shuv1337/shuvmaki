@@ -5,7 +5,10 @@
 // unwrap `{ data }` responses so the existing client keeps working.
 // The TUI `--server` flag still wants the process origin without `/api`.
 
-import { rewriteSseBlock } from './shuvcode-event-adapter.js'
+import {
+  createShuvcodeEventTranslator,
+  rewriteSseBlock,
+} from './shuvcode-event-adapter.js'
 
 export function toShuvcodeSdkBaseUrl(originOrApiUrl: string): string {
   const trimmed = originOrApiUrl.replace(/\/$/, '')
@@ -66,14 +69,24 @@ export function rewriteShuvcodeSessionCreateBody({
   return rewritten
 }
 
+function promptMetadata(record: Record<string, unknown>): Record<string, unknown> {
+  const metadata = isRecord(record.metadata) ? { ...record.metadata } : {}
+  if (typeof record.system === 'string') metadata.system = record.system
+  if (record.model && typeof record.model === 'object') metadata.model = record.model
+  if (typeof record.variant === 'string') metadata.variant = record.variant
+  if (typeof record.noReply === 'boolean') metadata.noReply = record.noReply
+  return metadata
+}
+
 export function rewriteShuvcodePromptBody(body: unknown): Record<string, unknown> {
   const record = isRecord(body) ? body : {}
+  const metadata = promptMetadata(record)
   if (typeof record.text === 'string') {
     const rewritten: Record<string, unknown> = { text: record.text }
     if (Array.isArray(record.files)) rewritten.files = record.files
     if (Array.isArray(record.agents)) rewritten.agents = record.agents
     if (Array.isArray(record.skills)) rewritten.skills = record.skills
-    if (isRecord(record.metadata)) rewritten.metadata = record.metadata
+    if (Object.keys(metadata).length > 0) rewritten.metadata = metadata
     if (typeof record.delivery === 'string') rewritten.delivery = record.delivery
     if (typeof record.resume === 'boolean') rewritten.resume = record.resume
     if (typeof record.id === 'string') rewritten.id = record.id
@@ -116,7 +129,78 @@ export function rewriteShuvcodePromptBody(body: unknown): Record<string, unknown
   if (typeof record.agent === 'string') {
     rewritten.agents = [{ name: record.agent }]
   }
+  if (Object.keys(metadata).length > 0) rewritten.metadata = metadata
   return rewritten
+}
+
+export function readShuvcodePromptModel(body: unknown): {
+  id: string
+  providerID: string
+  variant?: string
+} | undefined {
+  const record = isRecord(body) ? body : {}
+  const model = isRecord(record.model) ? record.model : {}
+  const id = typeof model.id === 'string'
+    ? model.id
+    : typeof model.modelID === 'string'
+      ? model.modelID
+      : undefined
+  const providerID = typeof model.providerID === 'string' ? model.providerID : undefined
+  if (!id || !providerID) return undefined
+  const variant =
+    typeof record.variant === 'string'
+      ? record.variant
+      : typeof model.variant === 'string'
+        ? model.variant
+        : undefined
+  return variant ? { id, providerID, variant } : { id, providerID }
+}
+
+export async function applyShuvcodePromptSideEffects({
+  origin,
+  sessionID,
+  headers,
+  body,
+}: {
+  origin: string
+  sessionID: string
+  headers: Headers
+  body: unknown
+}): Promise<void> {
+  const record = isRecord(body) ? body : {}
+  const authorization = headers.get('authorization')
+  const requestHeaders: Record<string, string> = {
+    'content-type': 'application/json',
+  }
+  if (authorization) requestHeaders.authorization = authorization
+
+  const model = readShuvcodePromptModel(body)
+  if (model) {
+    await fetch(`${origin}/api/session/${encodeURIComponent(sessionID)}/model`, {
+      method: 'POST',
+      headers: requestHeaders,
+      body: JSON.stringify({ model }),
+    }).catch(() => null)
+  }
+
+  if (typeof record.agent === 'string') {
+    await fetch(`${origin}/api/session/${encodeURIComponent(sessionID)}/agent`, {
+      method: 'POST',
+      headers: requestHeaders,
+      body: JSON.stringify({ agent: record.agent }),
+    }).catch(() => null)
+  }
+
+  if (typeof record.system === 'string' && record.system.length > 0) {
+    await fetch(
+      `${origin}/api/session/${encodeURIComponent(sessionID)}/instructions/entries/kimaki-system`,
+      {
+        method: 'PUT',
+        headers: requestHeaders,
+        body: JSON.stringify({ value: record.system }),
+      },
+    ).catch(() => null)
+  }
 }
 
 export function rewriteShuvcodeRequestUrl(url: URL): URL {
@@ -164,6 +248,16 @@ export async function rewriteShuvcodeSdkRequest(request: Request): Promise<Reque
       rewriteShuvcodeSessionCreateBody({ body: parsed, directory }),
     )
   } else if (method === 'POST' && pathname.endsWith('/prompt')) {
+    const sessionMatch = pathname.match(/\/session\/([^/]+)\/prompt$/)
+    const sessionID = sessionMatch?.[1]
+    if (sessionID) {
+      await applyShuvcodePromptSideEffects({
+        origin: url.origin,
+        sessionID,
+        headers: request.headers,
+        body: parsed,
+      })
+    }
     body = JSON.stringify(rewriteShuvcodePromptBody(parsed))
   }
 
@@ -196,6 +290,7 @@ export function mapShuvcodeActiveSessions(body: unknown): unknown {
 
 function createSseRewriteStream() {
   let buffer = ''
+  const translate = createShuvcodeEventTranslator()
   return new TransformStream<string, string>({
     transform(chunk, controller) {
       buffer += chunk
@@ -203,12 +298,12 @@ function createSseRewriteStream() {
       const parts = buffer.split('\n\n')
       buffer = parts.pop() ?? ''
       for (const part of parts) {
-        controller.enqueue(`${rewriteSseBlock(part)}\n\n`)
+        controller.enqueue(`${rewriteSseBlock(part, translate)}\n\n`)
       }
     },
     flush(controller) {
       if (buffer.length > 0) {
-        controller.enqueue(`${rewriteSseBlock(buffer)}\n\n`)
+        controller.enqueue(`${rewriteSseBlock(buffer, translate)}\n\n`)
       }
     },
   })

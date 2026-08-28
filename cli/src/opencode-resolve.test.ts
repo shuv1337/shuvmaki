@@ -16,13 +16,17 @@ import {
 import {
   buildShuvcodeSdkBaseUrl,
   isReusableShuvcodeHealthResponse,
+  readShuvcodePromptModel,
   rewriteShuvcodePromptBody,
   rewriteShuvcodeRequestUrl,
   rewriteShuvcodeSessionCreateBody,
   toShuvcodeSdkBaseUrl,
   unwrapShuvcodeJsonBody,
 } from './shuvcode-sdk-url.js'
-import { translateShuvcodeEvent } from './shuvcode-event-adapter.js'
+import {
+  createShuvcodeEventTranslateState,
+  translateShuvcodeEvent,
+} from './shuvcode-event-adapter.js'
 
 describe('shuvcode binary resolution helpers', () => {
   test('prefers SHUVCODE_PATH over OPENCODE_PATH', () => {
@@ -206,11 +210,31 @@ describe('shuvcode binary resolution helpers', () => {
         ],
         messageID: 'msg_1',
         agent: 'plan',
+        system: 'you are kimaki',
+        model: { providerID: 'anthropic', modelID: 'claude' },
+        variant: 'high',
+        noReply: true,
       }),
     ).toEqual({
       text: 'hello\nworld',
       id: 'msg_1',
       agents: [{ name: 'plan' }],
+      metadata: {
+        system: 'you are kimaki',
+        model: { providerID: 'anthropic', modelID: 'claude' },
+        variant: 'high',
+        noReply: true,
+      },
+    })
+    expect(
+      readShuvcodePromptModel({
+        model: { providerID: 'anthropic', modelID: 'claude' },
+        variant: 'high',
+      }),
+    ).toEqual({
+      id: 'claude',
+      providerID: 'anthropic',
+      variant: 'high',
     })
     expect(
       rewriteShuvcodeRequestUrl(
@@ -247,6 +271,115 @@ describe('shuvcode binary resolution helpers', () => {
             type: 'text',
             text: 'hi',
             time: { start: expect.any(Number), end: expect.any(Number) },
+          },
+        },
+      },
+    ])
+    const state = createShuvcodeEventTranslateState()
+    expect(
+      translateShuvcodeEvent(
+        {
+          type: 'session.inbox.enqueued',
+          created: 10,
+          data: {
+            sessionID: 'ses_1',
+            inboxID: 'msg_user',
+            item: { type: 'user', payload: { text: 'hi', agents: [{ name: 'build' }] } },
+          },
+        },
+        state,
+      ),
+    ).toEqual([
+      {
+        type: 'message.updated',
+        properties: {
+          info: {
+            id: 'msg_user',
+            sessionID: 'ses_1',
+            role: 'user',
+            time: { created: 10 },
+            agent: 'build',
+          },
+        },
+      },
+    ])
+    const stepEvents = translateShuvcodeEvent(
+      {
+        type: 'session.step.started',
+        created: 11,
+        data: {
+          sessionID: 'ses_1',
+          assistantMessageID: 'msg_a',
+          agent: 'build',
+          model: { id: 'claude', providerID: 'anthropic' },
+        },
+      },
+      state,
+    )
+    expect(stepEvents[0]).toEqual({
+      type: 'message.updated',
+      properties: {
+        info: {
+          id: 'msg_a',
+          sessionID: 'ses_1',
+          role: 'assistant',
+          parentID: 'msg_user',
+          modelID: 'claude',
+          providerID: 'anthropic',
+          mode: 'build',
+          agent: 'build',
+          time: { created: 11 },
+          cost: 0,
+          tokens: {
+            input: 0,
+            output: 0,
+            reasoning: 0,
+            cache: { read: 0, write: 0 },
+          },
+        },
+      },
+    })
+    expect(
+      translateShuvcodeEvent(
+        {
+          type: 'session.step.ended',
+          created: 12,
+          data: {
+            sessionID: 'ses_1',
+            assistantMessageID: 'msg_a',
+            finish: 'stop',
+            tokens: {
+              input: 1,
+              output: 2,
+              reasoning: 0,
+              cache: { read: 0, write: 0 },
+            },
+          },
+        },
+        state,
+      ),
+    ).toEqual([
+      {
+        type: 'message.updated',
+        properties: {
+          info: {
+            id: 'msg_a',
+            sessionID: 'ses_1',
+            role: 'assistant',
+            parentID: 'msg_user',
+            modelID: 'claude',
+            providerID: 'anthropic',
+            mode: 'build',
+            agent: 'build',
+            time: { created: 12, completed: 12 },
+            cost: 0,
+            tokens: {
+              input: 1,
+              output: 2,
+              reasoning: 0,
+              cache: { read: 0, write: 0 },
+            },
+            finish: 'stop',
           },
         },
       },

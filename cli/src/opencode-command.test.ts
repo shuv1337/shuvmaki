@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'vitest'
 import {
   ensureKimakiCommandShim,
   getSpawnCommandAndArgs,
+  quoteWindowsCommandSegment,
   sanitizeShimExecArgv,
   selectResolvedCommand,
   splitCommandLookupOutput,
@@ -55,9 +56,40 @@ describe('getSpawnCommandAndArgs', () => {
       }),
     ).toEqual({
       command: 'cmd.exe',
-      args: ['/d', '/s', '/c', '"C:\\Program Files\\nodejs\\opencode.cmd"', 'serve', '--port', '4096'],
+      args: [
+        '/d',
+        '/s',
+        '/c',
+        '"C:\\Program Files\\nodejs\\opencode.cmd"',
+        '"serve"',
+        '"--port"',
+        '"4096"',
+      ],
       windowsVerbatimArguments: true,
     })
+  })
+
+  test('quotes cmd metacharacters and percent signs in every segment', () => {
+    expect(quoteWindowsCommandSegment('C:\\proj\\foo&bar|baz^qux')).toBe(
+      '"C:\\proj\\foo&bar|baz^qux"',
+    )
+    expect(quoteWindowsCommandSegment('C:\\Users\\%USERNAME%\\proj')).toBe(
+      '"C:\\Users\\%%USERNAME%%\\proj"',
+    )
+    expect(
+      getSpawnCommandAndArgs({
+        resolvedCommand: 'C:\\Program Files\\nodejs\\shuvcode.cmd',
+        baseArgs: ['--dir', 'C:\\proj\\foo&bar'],
+        platform: 'win32',
+      }).args,
+    ).toEqual([
+      '/d',
+      '/s',
+      '/c',
+      '"C:\\Program Files\\nodejs\\shuvcode.cmd"',
+      '"--dir"',
+      '"C:\\proj\\foo&bar"',
+    ])
   })
 
   test('leaves direct executables unchanged on windows', () => {

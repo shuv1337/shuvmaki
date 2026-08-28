@@ -43,11 +43,9 @@ export function selectResolvedCommand({
   return cmdShim || lines[0] || null
 }
 
-function quoteWindowsCommandSegment(value: string): string {
-  if (!/[\s"]/u.test(value)) {
-    return value
-  }
-  return `"${value.replaceAll('"', '\\"')}"`
+export function quoteWindowsCommandSegment(value: string): string {
+  const escaped = value.replaceAll('%', '%%').replaceAll('"', '""')
+  return `"${escaped}"`
 }
 
 export function getSpawnCommandAndArgs({

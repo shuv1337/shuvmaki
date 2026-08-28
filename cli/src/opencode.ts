@@ -143,8 +143,14 @@ export function ensureShuvcodeServerPassword({
  * Falls back to the 0600 data-dir handoff file when env is unset.
  * Returns empty object when no password is set.
  */
-export function getOpencodeServerAuthHeaders(): Record<string, string> {
-  const auth = getShuvcodeServerAuthSnapshot({ dataDir: getDataDir() })
+export function getOpencodeServerAuthHeaders({
+  dataDir = getDataDir(),
+  env = process.env,
+}: {
+  dataDir?: string
+  env?: NodeJS.ProcessEnv
+} = {}): Record<string, string> {
+  const auth = getShuvcodeServerAuthSnapshot({ dataDir, env })
   if (!auth) return {}
   const encoded = Buffer.from(`${auth.username}:${auth.password}`).toString('base64')
   return { Authorization: `Basic ${encoded}` }
@@ -726,6 +732,14 @@ async function discoverExistingServer(): Promise<SingleServer | null> {
   if (handoff instanceof Error) return null
 
   applyShuvcodeServerAuth({ auth: handoff.auth })
+
+  const healthResponse = await requestHealthcheck({
+    url: `http://127.0.0.1:${handoff.port}/api/health`,
+    timeoutMs: 2000,
+  }).catch((e) => new FetchError({ url: `http://127.0.0.1:${handoff.port}/api/health`, cause: e }))
+  if (healthResponse instanceof Error) return null
+  if (!isReusableShuvcodeHealthStatus(healthResponse.status)) return null
+
   const persisted = persistShuvcodeServerAuth({
     dataDir: getDataDir(),
     auth: handoff.auth,
@@ -735,13 +749,6 @@ async function discoverExistingServer(): Promise<SingleServer | null> {
       `Could not persist discovered shuvcode server password: ${persisted.message}`,
     )
   }
-
-  const healthResponse = await requestHealthcheck({
-    url: `http://127.0.0.1:${handoff.port}/api/health`,
-    timeoutMs: 2000,
-  }).catch((e) => new FetchError({ url: `http://127.0.0.1:${handoff.port}/api/health`, cause: e }))
-  if (healthResponse instanceof Error) return null
-  if (!isReusableShuvcodeHealthStatus(healthResponse.status)) return null
 
   opencodeLogger.log(
     `Discovered existing shuvcode server on port ${handoff.port} via hrana lock port ${lockPort}`,

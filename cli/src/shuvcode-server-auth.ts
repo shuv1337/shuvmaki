@@ -118,7 +118,7 @@ export function getShuvcodeServerAuthSnapshot({
   dataDir: string
   env?: NodeJS.ProcessEnv
 }) {
-  return readShuvcodeServerAuthFromEnv({ env }) || loadShuvcodeServerAuth({ dataDir })
+  return loadShuvcodeServerAuth({ dataDir }) || readShuvcodeServerAuthFromEnv({ env })
 }
 
 export function parseOpencodePortDiscovery(body: string) {
@@ -229,40 +229,58 @@ export async function resolveShuvcodeServerHandoff({
   if (discovery instanceof Error) return discovery
   // Ignore any password field on the HTTP response. /kimaki/opencode-port
   // can be reached on 0.0.0.0 when the hrana server is internet-facing.
+  // Prefer the data-dir file so `kimaki --data-dir B` does not reuse
+  // OPENCODE_PASSWORD from another server's environment.
   const auth =
-    readShuvcodeServerAuthFromEnv({ env }) ||
-    loadShuvcodeServerAuth({ dataDir })
+    loadShuvcodeServerAuth({ dataDir }) ||
+    readShuvcodeServerAuthFromEnv({ env })
   if (!auth) {
     return new ShuvcodeAuthHandoffError({
-      reason: 'no password in env or data-dir handoff file',
+      reason: 'no password in data-dir handoff file or env',
     })
   }
   return { port: discovery.port, auth }
 }
 
-function shellQuote(value: string) {
+function quotePosixAttachSegment(value: string) {
   if (!value) return "''"
   return `'${value.replaceAll("'", `'"'"'`)}'`
+}
+
+export function quoteAttachCommandSegment({
+  value,
+  platform = process.platform,
+}: {
+  value: string
+  platform?: NodeJS.Platform
+}) {
+  if (platform === 'win32') {
+    return `"${value.replaceAll('%', '%%').replaceAll('"', '""')}"`
+  }
+  return quotePosixAttachSegment(value)
 }
 
 export function buildKimakiAttachCommand({
   sessionId,
   directory,
   dataDir,
+  platform = process.platform,
 }: {
   sessionId: string
   directory: string
   dataDir?: string
+  platform?: NodeJS.Platform
 }) {
+  const quote = (value: string) => quoteAttachCommandSegment({ value, platform })
   const parts = [
     'kimaki attach',
     '--session',
     sessionId,
     '--dir',
-    shellQuote(directory),
+    quote(directory),
   ]
   if (dataDir && !isDefaultKimakiDataDir(dataDir)) {
-    parts.push('--data-dir', shellQuote(dataDir))
+    parts.push('--data-dir', quote(dataDir))
   }
   return parts.join(' ')
 }
@@ -274,8 +292,11 @@ export function buildShuvcodeAttachArgs({
 }: {
   serverUrl: string
   sessionId: string
-  directory: string
+  directory?: string
 }) {
+  if (!directory) {
+    return ['--server', serverUrl, '--session', sessionId]
+  }
   return ['--server', serverUrl, '--session', sessionId, directory]
 }
 
@@ -311,13 +332,21 @@ export function buildKimakiAttachSpawn({
   env?: NodeJS.ProcessEnv
   platform?: NodeJS.Platform
 }) {
+  // Keep the project directory off the cmd.exe command line. Windows npm
+  // .cmd shims go through `cmd /c`, where `&`, `|`, `^`, and `%` in argv
+  // are shell syntax. shuvcode uses cwd as the project directory.
   const spawned = getSpawnCommandAndArgs({
     resolvedCommand,
-    baseArgs: buildShuvcodeAttachArgs({ serverUrl, sessionId, directory }),
+    baseArgs: buildShuvcodeAttachArgs({
+      serverUrl,
+      sessionId,
+      directory: undefined,
+    }),
     platform,
   })
   return {
     ...spawned,
+    cwd: directory,
     env: buildShuvcodeAttachEnv({ auth, env }),
   }
 }

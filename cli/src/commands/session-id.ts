@@ -26,15 +26,18 @@ export function buildSessionIdAttachReply({
   sessionId,
   directory,
   dataDir,
+  platform,
 }: {
   sessionId: string
   directory: string
   dataDir?: string
+  platform?: NodeJS.Platform
 }) {
   const attachCommand = buildKimakiAttachCommand({
     sessionId,
     directory,
     dataDir,
+    platform,
   })
   return `**Session ID:** \`${sessionId}\`\n**Attach command:**\n\`\`\`bash\n${attachCommand}\n\`\`\``
 }

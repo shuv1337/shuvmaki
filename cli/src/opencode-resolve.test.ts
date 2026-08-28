@@ -1,3 +1,5 @@
+import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { describe, expect, test } from 'vitest'
 import {
@@ -84,37 +86,41 @@ describe('shuvcode binary resolution helpers', () => {
   })
 
   test('generates a shared server password when none is set', () => {
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kimaki-auth-'))
     const env: NodeJS.ProcessEnv = {}
-    const password = ensureShuvcodeServerPassword({ env })
+    const password = ensureShuvcodeServerPassword({ env, dataDir })
     expect(password.length).toBeGreaterThan(16)
     expect(env.OPENCODE_PASSWORD).toBe(password)
     expect(env.OPENCODE_SERVER_PASSWORD).toBe(password)
+    fs.rmSync(dataDir, { recursive: true, force: true })
   })
 
   test('reuses OPENCODE_PASSWORD when already set', () => {
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kimaki-auth-'))
     const env: NodeJS.ProcessEnv = { OPENCODE_PASSWORD: 'existing-secret' }
-    expect(ensureShuvcodeServerPassword({ env })).toBe('existing-secret')
+    expect(ensureShuvcodeServerPassword({ env, dataDir })).toBe('existing-secret')
     expect(env.OPENCODE_SERVER_PASSWORD).toBe('existing-secret')
+    fs.rmSync(dataDir, { recursive: true, force: true })
   })
 
-  test('auth headers use the opencode username and password', () => {
-    const previousPassword = process.env.OPENCODE_SERVER_PASSWORD
-    const previousUser = process.env.OPENCODE_SERVER_USERNAME
-    process.env.OPENCODE_SERVER_PASSWORD = 'secret'
-    delete process.env.OPENCODE_SERVER_USERNAME
-    expect(getOpencodeServerAuthHeaders()).toEqual({
-      Authorization: `Basic ${Buffer.from('opencode:secret').toString('base64')}`,
+  test('auth headers prefer the data-dir file over env', () => {
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kimaki-auth-'))
+    ensureShuvcodeServerPassword({
+      env: { OPENCODE_PASSWORD: 'file-secret' },
+      dataDir,
     })
-    if (previousPassword === undefined) {
-      delete process.env.OPENCODE_SERVER_PASSWORD
-    } else {
-      process.env.OPENCODE_SERVER_PASSWORD = previousPassword
-    }
-    if (previousUser === undefined) {
-      delete process.env.OPENCODE_SERVER_USERNAME
-    } else {
-      process.env.OPENCODE_SERVER_USERNAME = previousUser
-    }
+    expect(
+      getOpencodeServerAuthHeaders({
+        dataDir,
+        env: {
+          OPENCODE_PASSWORD: 'env-secret',
+          OPENCODE_SERVER_PASSWORD: 'env-secret',
+        },
+      }),
+    ).toEqual({
+      Authorization: `Basic ${Buffer.from('opencode:file-secret').toString('base64')}`,
+    })
+    fs.rmSync(dataDir, { recursive: true, force: true })
   })
 
   test('binary name is shuvcode', () => {

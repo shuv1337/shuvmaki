@@ -71,7 +71,7 @@ cli
       process.exit(EXIT_NO_RESTART)
     }
     applyShuvcodeServerAuth({ auth: handoff.auth })
-    const { command, args, windowsVerbatimArguments, env } = buildKimakiAttachSpawn({
+    const { command, args, windowsVerbatimArguments, env, cwd } = buildKimakiAttachSpawn({
       resolvedCommand: resolveOpencodeCommand(),
       serverUrl: `http://127.0.0.1:${handoff.port}`,
       sessionId: options.session,
@@ -80,6 +80,7 @@ cli
     })
     const child = spawn(command, args, {
       stdio: 'inherit',
+      cwd,
       env,
       windowsVerbatimArguments,
     })

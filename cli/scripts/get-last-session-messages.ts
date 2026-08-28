@@ -1,8 +1,15 @@
 #!/usr/bin/env tsx
 import { createOpencodeClient } from '@opencode-ai/sdk/v2'
+import { randomBytes } from 'node:crypto'
 import { spawn } from 'node:child_process'
 import net from 'node:net'
-import { resolveOpencodeCommand } from '../src/opencode.js'
+import {
+  buildShuvcodeServeArgs,
+  getOpencodeServerAuthHeaders,
+  resolveOpencodeCommand,
+} from '../src/opencode.js'
+import { getSpawnCommandAndArgs } from '../src/opencode-command.js'
+import { applyShuvcodeServerAuth } from '../src/shuvcode-server-auth.js'
 
 async function getOpenPort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -23,10 +30,13 @@ async function getOpenPort(): Promise<number> {
 }
 
 async function waitForServer(port: number, maxAttempts = 30): Promise<boolean> {
+  const headers = getOpencodeServerAuthHeaders()
   for (let i = 0; i < maxAttempts; i++) {
     try {
-      const response = await fetch(`http://127.0.0.1:${port}/api/health`)
-      if (response.status < 500) {
+      const response = await fetch(`http://127.0.0.1:${port}/api/health`, {
+        headers,
+      })
+      if (response.status >= 200 && response.status < 300) {
         return true
       }
     } catch {
@@ -40,56 +50,66 @@ async function waitForServer(port: number, maxAttempts = 30): Promise<boolean> {
 }
 
 async function getLastSessionMessages() {
-  // Get a free port
   const port = await getOpenPort()
   const baseUrl = `http://127.0.0.1:${port}`
 
-  console.log(`Starting OpenCode server on port ${port}...`)
+  console.log(`Starting shuvcode server on port ${port}...`)
 
-  const opencodeCommand = resolveOpencodeCommand()
+  const password =
+    process.env.OPENCODE_PASSWORD ||
+    process.env.OPENCODE_SERVER_PASSWORD ||
+    randomBytes(16).toString('hex')
+  applyShuvcodeServerAuth({
+    auth: { username: 'opencode', password },
+  })
+
   const directory = process.cwd()
+  const { command, args, windowsVerbatimArguments } = getSpawnCommandAndArgs({
+    resolvedCommand: resolveOpencodeCommand(),
+    baseArgs: buildShuvcodeServeArgs({ port }),
+  })
 
-  // Start the OpenCode server
-  const serverProcess = spawn(
-    opencodeCommand,
-    ['serve', '--port', port.toString()],
-    {
-      stdio: 'pipe',
-      detached: false,
-      cwd: directory,
-      env: {
-        ...process.env,
-        OPENCODE_PORT: port.toString(),
-      },
+  const serverProcess = spawn(command, args, {
+    stdio: 'pipe',
+    detached: false,
+    cwd: directory,
+    windowsVerbatimArguments,
+    env: {
+      ...process.env,
+      OPENCODE_PASSWORD: password,
+      OPENCODE_SERVER_PASSWORD: password,
+      OPENCODE_PORT: port.toString(),
     },
-  )
+  })
 
   serverProcess.stdout?.on('data', (data) => {
-    console.log(`[opencode]: ${data.toString().trim()}`)
+    console.log(`[shuvcode]: ${data.toString().trim()}`)
   })
 
   serverProcess.stderr?.on('data', (data) => {
-    console.error(`[opencode error]: ${data.toString().trim()}`)
+    console.error(`[shuvcode error]: ${data.toString().trim()}`)
   })
 
   serverProcess.on('error', (error) => {
-    console.error('Failed to start OpenCode server:', error)
+    console.error('Failed to start shuvcode server:', error)
     process.exit(1)
   })
 
   serverProcess.on('exit', (code) => {
-    console.log(`OpenCode server exited with code: ${code}`)
+    console.log(`shuvcode server exited with code: ${code}`)
   })
 
-  // Wait for server to be ready
   await waitForServer(port)
 
-  const client = createOpencodeClient({ baseUrl })
+  const client = createOpencodeClient({
+    baseUrl,
+    directory,
+    headers: getOpencodeServerAuthHeaders(),
+  })
 
   console.log('=== Fetching Last Session Messages ===\n')
 
   try {
-    // Get the current project first
     const currentProjectResponse = await client.project.current()
     if (!currentProjectResponse.data) {
       console.error('Failed to fetch current project')
@@ -99,8 +119,7 @@ async function getLastSessionMessages() {
     console.log(`Current Project: ${currentProject.id}`)
     console.log(`Worktree: ${currentProject.worktree}\n`)
 
-    // Get all sessions for the current project
-    const sessionsResponse = await client.session.list()
+    const sessionsResponse = await client.session.list({ directory })
     if (!sessionsResponse.data) {
       console.error('Failed to fetch sessions')
       return
@@ -115,7 +134,6 @@ async function getLastSessionMessages() {
       return
     }
 
-    // Sort sessions by update time and get the latest one
     const latestSession = projectSessions.sort(
       (a, b) => b.time.updated - a.time.updated,
     )[0]
@@ -126,9 +144,9 @@ async function getLastSessionMessages() {
       `Last Updated: ${new Date(latestSession.time.updated).toLocaleString()}\n`,
     )
 
-    // Get messages for the session
     const messagesResponse = await client.session.messages({
       sessionID: latestSession.id,
+      directory,
     })
 
     if (!messagesResponse.data) {
@@ -139,7 +157,6 @@ async function getLastSessionMessages() {
     const messages = messagesResponse.data
     console.log(`Found ${messages.length} message(s) in the session\n`)
 
-    // Log the messages as prettified JSON
     console.log('=== Session Messages (JSON) ===\n')
     console.log(JSON.stringify(messages, null, 2))
   } catch (error) {
@@ -147,7 +164,6 @@ async function getLastSessionMessages() {
     serverProcess.kill()
     process.exit(1)
   } finally {
-    // Kill the server process when done
     serverProcess.kill()
     process.exit(0)
   }

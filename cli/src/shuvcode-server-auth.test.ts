@@ -97,6 +97,7 @@ describe('shuvcode server auth handoff', () => {
       sessionId: 'ses_test',
       directory: "/tmp/it's a dir",
       dataDir: '/tmp/kimaki-custom',
+      platform: 'linux',
     })
     expect(command).toBe(
       "kimaki attach --session ses_test --dir '/tmp/it'\"'\"'s a dir' --data-dir '/tmp/kimaki-custom'",
@@ -107,6 +108,7 @@ describe('shuvcode server auth handoff', () => {
       sessionId: 'ses_test',
       directory: '/tmp/project',
       dataDir: '/tmp/kimaki-custom',
+      platform: 'linux',
     })).toMatchInlineSnapshot(`
       "**Session ID:** \`ses_test\`
       **Attach command:**
@@ -114,6 +116,16 @@ describe('shuvcode server auth handoff', () => {
       kimaki attach --session ses_test --dir '/tmp/project' --data-dir '/tmp/kimaki-custom'
       \`\`\`"
     `)
+    expect(
+      buildKimakiAttachCommand({
+        sessionId: 'ses_test',
+        directory: 'C:\\proj\\foo&bar|%USERNAME%',
+        dataDir: 'C:\\kimaki-custom',
+        platform: 'win32',
+      }),
+    ).toBe(
+      'kimaki attach --session ses_test --dir "C:\\proj\\foo&bar|%%USERNAME%%" --data-dir "C:\\kimaki-custom"',
+    )
   })
 
   test('attach spawn args and env keep the secret out of argv', () => {
@@ -147,17 +159,54 @@ describe('shuvcode server auth handoff', () => {
     })
     expect(windowsSpawn.windowsVerbatimArguments).toBe(true)
     expect(windowsSpawn.command).toBe('cmd.exe')
+    expect(windowsSpawn.cwd).toBe('C:\\Users\\user\\project')
     expect(windowsSpawn.args).toEqual([
       '/d',
       '/s',
       '/c',
       '"C:\\Program Files\\nodejs\\shuvcode.cmd"',
-      '--server',
-      'http://127.0.0.1:4096',
-      '--session',
-      'ses_test',
-      'C:\\Users\\user\\project',
+      '"--server"',
+      '"http://127.0.0.1:4096"',
+      '"--session"',
+      '"ses_test"',
     ])
+    expect(windowsSpawn.args.join(' ')).not.toContain('project')
+  })
+
+  test('resolveShuvcodeServerHandoff prefers the data-dir file over env', async () => {
+    const dataDir = makeTempDir()
+    persistShuvcodeServerAuth({
+      dataDir,
+      auth: { username: 'opencode', password: 'data-dir-secret' },
+    })
+    const lock = await listen({
+      handler: (req, res) => {
+        if (req.url === '/kimaki/opencode-port') {
+          res.writeHead(200, { 'content-type': 'application/json' })
+          res.end(JSON.stringify({ port: 4096 }))
+          return
+        }
+        res.writeHead(404)
+        res.end()
+      },
+    })
+    try {
+      const handoff = await resolveShuvcodeServerHandoff({
+        lockPort: lock.port,
+        dataDir,
+        env: {
+          OPENCODE_PASSWORD: 'env-from-other-server',
+          OPENCODE_SERVER_PASSWORD: 'env-from-other-server',
+        },
+      })
+      expect(handoff).toEqual({
+        port: 4096,
+        auth: { username: 'opencode', password: 'data-dir-secret' },
+      })
+      expect(loadShuvcodeServerAuth({ dataDir })?.password).toBe('data-dir-secret')
+    } finally {
+      lock.server.close()
+    }
   })
 
   test('resolveShuvcodeServerHandoff uses the data-dir file and ignores HTTP passwords', async () => {

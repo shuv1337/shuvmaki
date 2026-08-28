@@ -29,7 +29,12 @@ async function waitForHealth({
       const response = await fetch(`http://127.0.0.1:${port}/api/health`, {
         headers: { Authorization: authorization },
       })
-      if (response.status >= 200 && response.status < 300) {
+      const contentType = response.headers.get('content-type') || ''
+      if (
+        response.status >= 200 &&
+        response.status < 300 &&
+        contentType.toLowerCase().includes('application/json')
+      ) {
         return true
       }
     } catch {

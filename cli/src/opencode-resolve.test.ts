@@ -13,6 +13,16 @@ import {
   isShuvcodeCliVersionOutput,
   looksLikeUpstreamOpencodeBinary,
 } from './opencode.js'
+import {
+  buildShuvcodeSdkBaseUrl,
+  isReusableShuvcodeHealthResponse,
+  rewriteShuvcodePromptBody,
+  rewriteShuvcodeRequestUrl,
+  rewriteShuvcodeSessionCreateBody,
+  toShuvcodeSdkBaseUrl,
+  unwrapShuvcodeJsonBody,
+} from './shuvcode-sdk-url.js'
+import { translateShuvcodeEvent } from './shuvcode-event-adapter.js'
 
 describe('shuvcode binary resolution helpers', () => {
   test('prefers SHUVCODE_PATH over OPENCODE_PATH', () => {
@@ -156,5 +166,90 @@ describe('shuvcode binary resolution helpers', () => {
 
   test('binary name is shuvcode', () => {
     expect(SHUVCODE_BIN_NAME).toBe('shuvcode')
+  })
+
+  test('SDK baseUrl is the /api origin and is idempotent', () => {
+    expect(buildShuvcodeSdkBaseUrl({ port: 4096 })).toBe('http://127.0.0.1:4096/api')
+    expect(toShuvcodeSdkBaseUrl('http://127.0.0.1:4096')).toBe(
+      'http://127.0.0.1:4096/api',
+    )
+    expect(toShuvcodeSdkBaseUrl('http://127.0.0.1:4096/api')).toBe(
+      'http://127.0.0.1:4096/api',
+    )
+    expect(toShuvcodeSdkBaseUrl('http://127.0.0.1:4096/api/')).toBe(
+      'http://127.0.0.1:4096/api',
+    )
+    expect(
+      isReusableShuvcodeHealthResponse({
+        status: 200,
+        contentType: 'text/html; charset=utf-8',
+      }),
+    ).toBe(false)
+    expect(
+      rewriteShuvcodeSessionCreateBody({
+        body: {
+          directory: '/tmp/project',
+          permission: [{ permission: 'bash', action: 'allow', pattern: '*' }],
+          title: 'hello',
+        },
+        directory: '/tmp/project',
+      }),
+    ).toEqual({
+      title: 'hello',
+      location: { directory: '/tmp/project' },
+    })
+    expect(
+      rewriteShuvcodePromptBody({
+        parts: [
+          { type: 'text', text: 'hello' },
+          { type: 'text', text: 'world' },
+        ],
+        messageID: 'msg_1',
+        agent: 'plan',
+      }),
+    ).toEqual({
+      text: 'hello\nworld',
+      id: 'msg_1',
+      agents: [{ name: 'plan' }],
+    })
+    expect(
+      rewriteShuvcodeRequestUrl(
+        new URL('http://127.0.0.1:4096/api/session/ses_1/prompt_async'),
+      ).pathname,
+    ).toBe('/api/session/ses_1/prompt')
+    expect(
+      rewriteShuvcodeRequestUrl(
+        new URL('http://127.0.0.1:4096/api/session/ses_1/abort'),
+      ).pathname,
+    ).toBe('/api/session/ses_1/interrupt')
+    expect(unwrapShuvcodeJsonBody({ data: { id: 'ses_1' } })).toEqual({
+      id: 'ses_1',
+    })
+    expect(
+      translateShuvcodeEvent({
+        type: 'session.text.ended',
+        data: {
+          sessionID: 'ses_1',
+          assistantMessageID: 'msg_a',
+          ordinal: 0,
+          text: 'hi',
+        },
+      }),
+    ).toEqual([
+      {
+        type: 'message.part.updated',
+        properties: {
+          sessionID: 'ses_1',
+          part: {
+            id: 'text-ses_1-msg_a-0',
+            sessionID: 'ses_1',
+            messageID: 'msg_a',
+            type: 'text',
+            text: 'hi',
+            time: { start: expect.any(Number), end: expect.any(Number) },
+          },
+        },
+      },
+    ])
   })
 })

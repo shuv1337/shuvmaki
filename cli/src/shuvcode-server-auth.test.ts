@@ -16,7 +16,7 @@ import {
   buildShuvcodeAttachArgs,
   buildShuvcodeAttachEnv,
   buildShuvcodeBasicAuthHeader,
-  isReusableShuvcodeHealthStatus,
+  isReusableShuvcodeHealthResponse,
   loadShuvcodeServerAuth,
   parseOpencodePortDiscovery,
   persistShuvcodeServerAuth,
@@ -86,11 +86,37 @@ describe('shuvcode server auth handoff', () => {
     expect(parseOpencodePortDiscovery('{"port":"4096"}')).toBeInstanceOf(Error)
   })
 
-  test('401 and 403 health responses are not reusable', () => {
-    expect(isReusableShuvcodeHealthStatus(200)).toBe(true)
-    expect(isReusableShuvcodeHealthStatus(401)).toBe(false)
-    expect(isReusableShuvcodeHealthStatus(403)).toBe(false)
-    expect(isReusableShuvcodeHealthStatus(500)).toBe(false)
+  test('401 and HTML 200 health responses are not reusable', () => {
+    expect(
+      isReusableShuvcodeHealthResponse({
+        status: 200,
+        contentType: 'application/json',
+      }),
+    ).toBe(true)
+    expect(
+      isReusableShuvcodeHealthResponse({
+        status: 200,
+        contentType: 'text/html',
+      }),
+    ).toBe(false)
+    expect(
+      isReusableShuvcodeHealthResponse({
+        status: 401,
+        contentType: 'application/json',
+      }),
+    ).toBe(false)
+    expect(
+      isReusableShuvcodeHealthResponse({
+        status: 403,
+        contentType: 'application/json',
+      }),
+    ).toBe(false)
+    expect(
+      isReusableShuvcodeHealthResponse({
+        status: 500,
+        contentType: 'application/json',
+      }),
+    ).toBe(false)
   })
 
   test('kimaki attach command never includes the serve password', () => {

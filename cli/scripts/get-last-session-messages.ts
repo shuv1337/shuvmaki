@@ -8,6 +8,7 @@ import {
   getOpencodeServerAuthHeaders,
   resolveOpencodeCommand,
 } from '../src/opencode.js'
+import { buildShuvcodeSdkBaseUrl } from '../src/shuvcode-sdk-url.js'
 import { getSpawnCommandAndArgs } from '../src/opencode-command.js'
 import { applyShuvcodeServerAuth } from '../src/shuvcode-server-auth.js'
 
@@ -36,7 +37,12 @@ async function waitForServer(port: number, maxAttempts = 30): Promise<boolean> {
       const response = await fetch(`http://127.0.0.1:${port}/api/health`, {
         headers,
       })
-      if (response.status >= 200 && response.status < 300) {
+      const contentType = response.headers.get('content-type') || ''
+      if (
+        response.status >= 200 &&
+        response.status < 300 &&
+        contentType.toLowerCase().includes('application/json')
+      ) {
         return true
       }
     } catch {
@@ -51,7 +57,7 @@ async function waitForServer(port: number, maxAttempts = 30): Promise<boolean> {
 
 async function getLastSessionMessages() {
   const port = await getOpenPort()
-  const baseUrl = `http://127.0.0.1:${port}`
+  const baseUrl = buildShuvcodeSdkBaseUrl({ port })
 
   console.log(`Starting shuvcode server on port ${port}...`)
 

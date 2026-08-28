@@ -164,10 +164,7 @@ export function buildOpencodePortDiscoveryPayload({ port }: { port: number }) {
   return { port }
 }
 
-export function isReusableShuvcodeHealthStatus(status: number) {
-  if (status === 401 || status === 403) return false
-  return status > 0 && status < 500
-}
+export { isReusableShuvcodeHealthResponse } from './shuvcode-sdk-url.js'
 
 function requestJson({
   url,

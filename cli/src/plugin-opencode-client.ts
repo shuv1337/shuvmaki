@@ -16,6 +16,7 @@
 // a logging failure must never break plugin logic.
 
 import { createOpencodeClient, type OpencodeClient } from '@opencode-ai/sdk/v2'
+import { createShuvcodeSdkFetch, toShuvcodeSdkBaseUrl } from './shuvcode-sdk-url.js'
 
 // Inline auth header construction instead of importing from opencode.ts,
 // because opencode.ts pulls in the full server manager (spawn, store, etc.)
@@ -40,9 +41,10 @@ export function createPluginClient({
   directory: string
 }): OpencodeClient {
   return createOpencodeClient({
-    baseUrl: serverUrl.toString().replace(/\/$/, ''),
+    baseUrl: toShuvcodeSdkBaseUrl(serverUrl.toString()),
     directory,
     headers: getAuthHeaders(),
+    fetch: createShuvcodeSdkFetch(),
   })
 }
 

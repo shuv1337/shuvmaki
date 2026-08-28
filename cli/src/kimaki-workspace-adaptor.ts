@@ -107,6 +107,10 @@ export const kimakiWorkspaceAdaptorPlugin: Plugin = async ({
   directory,
   experimental_workspace,
 }) => {
+  // shuvcode v2 has no experimental workspace plugin hook. Stay silent.
+  if (!experimental_workspace?.register) {
+    return {}
+  }
   experimental_workspace.register(
     'kimaki-worktree',
     createKimakiWorktreeAdaptor(directory),

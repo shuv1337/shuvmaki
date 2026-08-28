@@ -127,7 +127,7 @@ this project is a **hard cutover** to [Latitudes-Dev/shuvcode](https://github.co
 
 ## opencode SDK
 
-the HTTP client still imports from `@opencode-ai/sdk/v2` (the published 1.x package's flat v2 API). never import from `@opencode-ai/sdk` (v1 nested params). the v2 SDK uses flat parameters instead of nested `path`/`query`/`body` objects. for example:
+the HTTP client still imports from `@opencode-ai/sdk/v2` (the published 1.x package's flat v2 API). never import from `@opencode-ai/sdk` (v1 nested params). shuvcode v2 mounts routes under `/api/*` while the SDK emits unprefixed paths (`/session`, `/event`), so every SDK `baseUrl` must be `http://127.0.0.1:<port>/api` via `toShuvcodeSdkBaseUrl` / `buildShuvcodeSdkBaseUrl`. `createShuvcodeSdkFetch()` rewrites `POST /session` bodies to `{ title, location }`, maps `prompt_async` → `prompt` and `abort` → `interrupt`, unwraps `{ data }` JSON, and translates shuvcode v2 SSE events into the `properties`-shaped events the Discord runtime already understands. health checks must require `application/json` — SPA `text/html` 200s are not healthy. subscribe to events with `client.event.subscribe` (`/api/event`); `/global/event` does not exist. the v2 SDK uses flat parameters instead of nested `path`/`query`/`body` objects. for example:
 
 - `session.get({ sessionID: id })` not `session.get({ path: { id } })`
 - `session.messages({ sessionID: id, directory })` not `session.messages({ path: { id }, query: { directory } })`

@@ -66,10 +66,14 @@ import { getHranaUrl } from './hrana-server.js'
 import {
   applyShuvcodeServerAuth,
   getShuvcodeServerAuthSnapshot,
-  isReusableShuvcodeHealthStatus,
   persistShuvcodeServerAuth,
   resolveShuvcodeServerHandoff,
 } from './shuvcode-server-auth.js'
+import {
+  buildShuvcodeSdkBaseUrl,
+  createShuvcodeSdkFetch,
+  isReusableShuvcodeHealthResponse,
+} from './shuvcode-sdk-url.js'
 
 // SDK Config type is simplified; opencode accepts nested permission objects with path patterns
 type PermissionAction = 'ask' | 'allow' | 'deny'
@@ -172,7 +176,7 @@ export async function requestHealthcheck({
 }: {
   url: string
   timeoutMs?: number
-}): Promise<{ status: number; body: string }> {
+}): Promise<{ status: number; body: string; contentType: string }> {
   return new Promise((resolve, reject) => {
     let settled = false
     let timeout: NodeJS.Timeout | null = null
@@ -201,9 +205,13 @@ export async function requestHealthcheck({
         })
         res.on('end', () => {
           settle(() => {
+            const contentType = res.headers['content-type']
             resolve({
               status: res.statusCode || 0,
               body: Buffer.concat(chunks).toString('utf-8'),
+              contentType: Array.isArray(contentType)
+                ? contentType.join(';')
+                : contentType || '',
             })
           })
         })
@@ -754,19 +762,14 @@ async function waitForServer({
       await new Promise((resolve) => setTimeout(resolve, 100))
       continue
     }
-    if (response.status === 401 || response.status === 403) {
+    if (!isReusableShuvcodeHealthResponse(response)) {
+      if (response.body.includes('BunInstallFailedError')) {
+        return new ServerStartError({ port, reason: response.body.slice(0, 200) })
+      }
       await new Promise((resolve) => setTimeout(resolve, 100))
       continue
     }
-    if (response.status < 500) {
-      return true
-    }
-    const body = response.body
-    // Fatal errors that won't resolve with retrying
-    if (body.includes('BunInstallFailedError')) {
-      return new ServerStartError({ port, reason: body.slice(0, 200) })
-    }
-    await new Promise((resolve) => setTimeout(resolve, 100))
+    return true
   }
   return new ServerStartError({
     port,
@@ -816,7 +819,7 @@ async function discoverExistingServer(): Promise<SingleServer | null> {
     timeoutMs: 2000,
   }).catch((e) => new FetchError({ url: `http://127.0.0.1:${handoff.port}/api/health`, cause: e }))
   if (healthResponse instanceof Error) return null
-  if (!isReusableShuvcodeHealthStatus(healthResponse.status)) return null
+  if (!isReusableShuvcodeHealthResponse(healthResponse)) return null
 
   const persisted = persistShuvcodeServerAuth({
     dataDir: getDataDir(),
@@ -834,7 +837,7 @@ async function discoverExistingServer(): Promise<SingleServer | null> {
   return {
     process: null,
     port: handoff.port,
-    baseUrl: `http://127.0.0.1:${handoff.port}`,
+    baseUrl: buildShuvcodeSdkBaseUrl({ port: handoff.port }),
     discovered: true,
   }
 }
@@ -1236,7 +1239,7 @@ async function startSingleServer({
   const server: SingleServer = {
     process: serverProcess,
     port,
-    baseUrl: `http://127.0.0.1:${port}`,
+    baseUrl: buildShuvcodeSdkBaseUrl({ port }),
   }
   if (startingServerProcess === serverProcess) {
     startingServerProcess = null
@@ -1258,16 +1261,10 @@ function getOrCreateClient({
     return cached
   }
 
-  const fetchWithTimeout = (request: Request) =>
-    fetch(request, {
-      // @ts-ignore
-      timeout: false,
-    })
-
   const client = createOpencodeClient({
     baseUrl,
     directory,
-    fetch: fetchWithTimeout as typeof fetch,
+    fetch: createShuvcodeSdkFetch(),
     headers: getOpencodeServerAuthHeaders(),
   })
   clientCache.set(directory, client)

@@ -30,9 +30,8 @@ import {
 } from '../html-actions.js'
 import * as errore from 'errore'
 import crypto from 'node:crypto'
-import { GitCommandError, OpenCodeSdkError } from '../errors.js'
+import { GitCommandError } from '../errors.js'
 import { resolveTextChannel, resolveWorkingDirectory } from '../discord-utils.js'
-import { initializeOpencodeForDirectory } from '../opencode.js'
 import {
   deleteWorktree,
   git,
@@ -642,12 +641,15 @@ async function handleDeleteWorktreeAction({
     return
   }
 
-  // SDK-created workspaces must be removed through OpenCode so its workspace
-  // table stays in sync. Legacy/manual worktrees have no workspace_id, so they
-  // still use the direct git cleanup path.
+  // shuvcode v2 has no workspace API. Always remove the git worktree.
   const displayName = row.branch ?? row.name
   const deleteResult = row.workspaceId
-    ? await deleteWorkspace({ projectDirectory, workspaceId: row.workspaceId })
+    ? await deleteWorkspace({
+        projectDirectory,
+        workspaceId: row.workspaceId,
+        worktreeDirectory: row.directory,
+        worktreeName: row.branch ?? '',
+      })
     : await deleteWorktree({
         projectDirectory,
         worktreeDirectory: row.directory,
@@ -689,20 +691,16 @@ async function handleDeleteWorktreeAction({
 
 async function deleteWorkspace({
   projectDirectory,
-  workspaceId,
+  worktreeDirectory,
+  worktreeName,
 }: {
   projectDirectory: string
   workspaceId: string
+  worktreeDirectory: string
+  worktreeName: string
 }) {
-  const getClient = await initializeOpencodeForDirectory(projectDirectory)
-  if (getClient instanceof Error) return getClient
-
-  const response = await getClient().experimental.workspace.remove({
-    id: workspaceId,
-    directory: projectDirectory,
-  }).catch((e) => new OpenCodeSdkError({ operation: 'workspace.remove', cause: e }))
-  if (response instanceof Error) return response
-  if (response.error) return new Error(`Workspace removal failed: ${JSON.stringify(response.error)}`)
+  // shuvcode v2 has no experimental workspace API. Remove the git worktree.
+  return deleteWorktree({ projectDirectory, worktreeDirectory, worktreeName })
 }
 
 export async function handleWorktreesCommand({

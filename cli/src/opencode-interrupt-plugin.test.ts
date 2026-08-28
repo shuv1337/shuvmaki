@@ -56,12 +56,18 @@ function createStubServer(): Promise<{
 
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://localhost')
+    const pathname = url.pathname.startsWith('/api/')
+      ? url.pathname.slice(4)
+      : url.pathname
     const sendJson = (body: unknown) => {
       res.writeHead(200, { 'content-type': 'application/json' })
       res.end(JSON.stringify(body))
     }
 
-    if (req.method === 'GET' && url.pathname === '/session/status') {
+    if (
+      req.method === 'GET' &&
+      (pathname === '/session/status' || pathname === '/session/active')
+    ) {
       const data: Record<string, SessionStatus> = {}
       for (const [id, status] of statuses.entries()) data[id] = status
       sendJson(data)
@@ -69,13 +75,13 @@ function createStubServer(): Promise<{
     }
 
     // The plugin logs through client.app.log (POST /log); accept and ignore.
-    if (req.method === 'POST' && url.pathname === '/log') {
+    if (req.method === 'POST' && pathname === '/log') {
       await readBody(req)
       sendJson(true)
       return
     }
 
-    const abortMatch = url.pathname.match(/^\/session\/([^/]+)\/abort$/)
+    const abortMatch = pathname.match(/^\/session\/([^/]+)\/(?:abort|interrupt)$/)
     if (req.method === 'POST' && abortMatch) {
       const sessionID = decodeURIComponent(abortMatch[1]!)
       abortCalls.push({ sessionID })
@@ -85,7 +91,7 @@ function createStubServer(): Promise<{
       return
     }
 
-    const promptMatch = url.pathname.match(/^\/session\/([^/]+)\/prompt_async$/)
+    const promptMatch = pathname.match(/^\/session\/([^/]+)\/(?:prompt_async|prompt)$/)
     if (req.method === 'POST' && promptMatch) {
       const sessionID = decodeURIComponent(promptMatch[1]!)
       const raw = await readBody(req)
@@ -244,8 +250,8 @@ describe('interruptOpencodeSessionOnUserMessage', () => {
     expect(stub.promptAsyncCalls).toEqual([
       {
         sessionID,
-        messageID,
-        parts: [{ type: 'text', text: 'user message' }],
+        id: messageID,
+        text: 'user message',
       },
     ])
   })
@@ -321,8 +327,8 @@ describe('interruptOpencodeSessionOnUserMessage', () => {
     expect(stub.promptAsyncCalls).toEqual([
       {
         sessionID,
-        messageID,
-        parts: [{ type: 'text', text: 'user message' }],
+        id: messageID,
+        text: 'user message',
       },
     ])
   })
@@ -352,7 +358,7 @@ describe('interruptOpencodeSessionOnUserMessage', () => {
     await delay({ ms: 300 })
 
     expect(stub.abortCalls).toEqual([{ sessionID }, { sessionID }])
-    expect(stub.promptAsyncCalls.map((c) => c.messageID)).toEqual([
+    expect(stub.promptAsyncCalls.map((c) => c.id)).toEqual([
       firstMessageID,
       secondMessageID,
     ])
@@ -377,10 +383,9 @@ describe('interruptOpencodeSessionOnUserMessage', () => {
     expect(stub.promptAsyncCalls).toEqual([
       {
         sessionID,
-        messageID,
-        parts: [{ type: 'text', text: 'user message' }],
-        agent: 'plan',
-        model: { providerID: 'anthropic', modelID: 'claude' },
+        id: messageID,
+        text: 'user message',
+        agents: [{ name: 'plan' }],
       },
     ])
   })

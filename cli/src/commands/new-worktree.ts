@@ -31,6 +31,7 @@ import {
 import { createLogger, LogPrefix } from '../logger.js'
 import { notifyError } from '../sentry.js'
 import {
+  createWorktreeWithSubmodules,
   execAsync,
   listBranchesByLastCommit,
   resolveBestBaseRef,
@@ -209,13 +210,10 @@ async function getProjectDirectoryFromChannel(
 }
 
 /**
- * Try creating a worktree via the OpenCode workspace SDK.
- * Returns the workspace directory on success, or an Error if the workspace
- * feature is not available or the creation fails. Callers fall back to the
- * direct git path on Error.
+ * Create a git worktree in the kimaki data dir.
+ * shuvcode v2 has no `/experimental/workspace` API, so this is the only path.
  */
 async function tryWorkspaceCreate({
-  threadId,
   worktreeName,
   projectDirectory,
   baseBranch,
@@ -224,26 +222,14 @@ async function tryWorkspaceCreate({
   worktreeName: string
   projectDirectory: string
   baseBranch?: string
-}): Promise<{ directory: string; workspaceId: string } | Error> {
-  const getClient = await initializeOpencodeForDirectory(projectDirectory)
-  if (getClient instanceof Error) return getClient
-
-  const client = getClient()
-  const response = await client.experimental.workspace.create({
+}): Promise<{ directory: string; workspaceId?: string } | Error> {
+  const result = await createWorktreeWithSubmodules({
     directory: projectDirectory,
-    type: 'kimaki-worktree',
-    branch: worktreeName,
-    extra: baseBranch ? { baseBranch } : null,
-  }).catch((e) => new OpenCodeSdkError({ operation: 'workspace.create', cause: e }))
-  if (response instanceof Error) return response
-  if (response.error) {
-    return new Error(`Workspace creation failed: ${JSON.stringify(response.error)}`)
-  }
-  const workspace = response.data
-  if (!workspace?.directory || !workspace.id) {
-    return new Error('Workspace SDK returned no directory or ID')
-  }
-  return { directory: workspace.directory, workspaceId: workspace.id }
+    name: worktreeName,
+    baseBranch,
+  })
+  if (result instanceof Error) return result
+  return { directory: result.directory }
 }
 
 /**
@@ -336,7 +322,7 @@ export async function createWorktreeInBackground({
       )
       await editChain
 
-      logger.log(`[WORKTREE] Created via workspace SDK: ${workspaceResult.directory}`)
+      logger.log(`[WORKTREE] Created via git worktree: ${workspaceResult.directory}`)
       return workspaceResult.directory
   })().catch((e) => {
     logger.error('[WORKTREE] Unexpected error in createWorktreeInBackground:', e)

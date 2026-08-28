@@ -517,13 +517,84 @@ function ensureProcessCleanupHandlersRegistered(): void {
 
 export const SHUVCODE_BIN_NAME = 'shuvcode'
 
+export type ShuvcodePathOverrideSource = 'SHUVCODE_PATH' | 'OPENCODE_PATH'
+
+export function getShuvcodePathOverrideSource({
+  env = process.env,
+}: {
+  env?: NodeJS.ProcessEnv
+} = {}): { path: string; source: ShuvcodePathOverrideSource } | undefined {
+  const shuvcodePath = env.SHUVCODE_PATH?.trim()
+  if (shuvcodePath) return { path: shuvcodePath, source: 'SHUVCODE_PATH' }
+  const opencodePath = env.OPENCODE_PATH?.trim()
+  if (opencodePath) return { path: opencodePath, source: 'OPENCODE_PATH' }
+  return undefined
+}
+
 export function getShuvcodePathOverride({
   env = process.env,
 }: {
   env?: NodeJS.ProcessEnv
 } = {}): string | undefined {
-  const override = env.SHUVCODE_PATH || env.OPENCODE_PATH
-  return override && override.trim().length > 0 ? override : undefined
+  return getShuvcodePathOverrideSource({ env })?.path
+}
+
+export function looksLikeUpstreamOpencodeBinary(resolvedPath: string): boolean {
+  const normalized = resolvedPath.replaceAll('\\', '/')
+  const base = path.posix.basename(normalized).toLowerCase()
+  return (
+    base === 'opencode' ||
+    base === 'opencode.exe' ||
+    base === 'opencode.cmd' ||
+    base === 'opencode.bat'
+  )
+}
+
+export function isShuvcodeCliVersionOutput(output: string): boolean {
+  return /shuvcode/i.test(output)
+}
+
+function readResolvedBinaryVersion({ command }: { command: string }): string | null {
+  const result = errore.try(
+    () =>
+      execFileSync(command, ['--version'], {
+        encoding: 'utf8',
+        timeout: 5000,
+      }),
+    () => null,
+  )
+  if (result === null || typeof result !== 'string') return null
+  return result
+}
+
+function acceptResolvedShuvcodeOverride({
+  resolvedPath,
+  source,
+}: {
+  resolvedPath: string
+  source: ShuvcodePathOverrideSource
+}): boolean {
+  if (looksLikeUpstreamOpencodeBinary(resolvedPath)) {
+    opencodeLogger.warn(
+      `${source} points at upstream opencode (${resolvedPath}). Ignoring it. Set SHUVCODE_PATH to a shuvcode binary.`,
+    )
+    return false
+  }
+  const version = readResolvedBinaryVersion({ command: resolvedPath })
+  if (version !== null && !isShuvcodeCliVersionOutput(version)) {
+    opencodeLogger.warn(
+      `${source} binary --version is not shuvcode (${resolvedPath}: ${version.trim()}). Ignoring it.`,
+    )
+    return false
+  }
+  if (version !== null) {
+    opencodeLogger.log(
+      `Resolved shuvcode binary from ${source}: ${resolvedPath} (${version.trim()})`,
+    )
+  } else {
+    opencodeLogger.log(`Resolved shuvcode binary from ${source}: ${resolvedPath}`)
+  }
+  return true
 }
 
 export function getShuvcodeCandidatePaths({
@@ -552,8 +623,9 @@ export function buildShuvcodeServeArgs({
 }: {
   port: number | string
 }): string[] {
-  // Issue #7: spawn only the v2-safe --port flag. Do not pass --print-logs
-  // (unrecognized) or extra global flags such as --log-level.
+  // Issue #7: spawn only the v2-safe --port flag. --print-logs is unrecognized
+  // on v2 serve. --log-level is still a valid global flag (lowercase); we drop
+  // it here as a simplification so debugging can pass it manually.
   return ['serve', '--port', String(port)]
 }
 
@@ -599,13 +671,19 @@ export function resolveOpencodeCommand(): string {
     return resolvedOpencodeCommand
   }
 
-  const envPath = getShuvcodePathOverride()
-  if (envPath) {
+  const override = getShuvcodePathOverrideSource()
+  if (override) {
     const resolvedFromEnv = selectResolvedCommand({
-      output: envPath,
+      output: override.path,
       isWindows: process.platform === 'win32',
     })
-    if (resolvedFromEnv) {
+    if (
+      resolvedFromEnv &&
+      acceptResolvedShuvcodeOverride({
+        resolvedPath: resolvedFromEnv,
+        source: override.source,
+      })
+    ) {
       resolvedOpencodeCommand = resolvedFromEnv
       return resolvedFromEnv
     }

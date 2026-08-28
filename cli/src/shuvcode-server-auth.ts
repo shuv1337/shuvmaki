@@ -3,6 +3,11 @@
 // `kimaki attach` run in separate processes, so they must recover the
 // credential without putting it in Discord or on the internet-facing
 // hrana listener. The 0600 file in the data dir is the only handoff.
+//
+// Two kimaki processes must never share a data dir. The auth file is
+// last-writer-wins: a second bot with a different KIMAKI_LOCK_PORT would
+// overwrite the password and the first bot's health checks would 401.
+// AGENTS.md already requires a separate --data-dir for parallel processes.
 
 import fs from 'node:fs'
 import http from 'node:http'
@@ -118,6 +123,10 @@ export function getShuvcodeServerAuthSnapshot({
   dataDir: string
   env?: NodeJS.ProcessEnv
 }) {
+  // File-before-env is for bot/CLI processes that may inherit a stale
+  // OPENCODE_PASSWORD from another server. plugin-opencode-client.ts is
+  // env-only on purpose: it runs inside the shuvcode child and inherits
+  // the exact env of the server that spawned it. Do not "unify" them.
   return loadShuvcodeServerAuth({ dataDir }) || readShuvcodeServerAuthFromEnv({ env })
 }
 
@@ -255,9 +264,28 @@ export function quoteAttachCommandSegment({
   platform?: NodeJS.Platform
 }) {
   if (platform === 'win32') {
-    return `"${value.replaceAll('%', '%%').replaceAll('"', '""')}"`
+    // Leave `%` untouched. Doubling it only works inside .bat files; on the
+    // cmd.exe command line it still expands `%VAR%` and corrupts literal `%`.
+    return `"${value.replaceAll('"', '""')}"`
   }
   return quotePosixAttachSegment(value)
+}
+
+export function attachCommandHasUnescapableCmdPercent({
+  directory,
+  dataDir,
+  platform = process.platform,
+}: {
+  directory: string
+  dataDir?: string
+  platform?: NodeJS.Platform
+}) {
+  if (platform !== 'win32') return false
+  if (directory.includes('%')) return true
+  if (dataDir && !isDefaultKimakiDataDir(dataDir) && dataDir.includes('%')) {
+    return true
+  }
+  return false
 }
 
 export function buildKimakiAttachCommand({

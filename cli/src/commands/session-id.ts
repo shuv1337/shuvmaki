@@ -17,7 +17,10 @@ import {
   initializeOpencodeForDirectory,
 } from '../opencode.js'
 import { getDataDir } from '../config.js'
-import { buildKimakiAttachCommand } from '../shuvcode-server-auth.js'
+import {
+  attachCommandHasUnescapableCmdPercent,
+  buildKimakiAttachCommand,
+} from '../shuvcode-server-auth.js'
 import { createLogger, LogPrefix } from '../logger.js'
 
 const logger = createLogger(LogPrefix.SESSION)
@@ -39,7 +42,11 @@ export function buildSessionIdAttachReply({
     dataDir,
     platform,
   })
-  return `**Session ID:** \`${sessionId}\`\n**Attach command:**\n\`\`\`bash\n${attachCommand}\n\`\`\``
+  const reply = `**Session ID:** \`${sessionId}\`\n**Attach command:**\n\`\`\`bash\n${attachCommand}\n\`\`\``
+  if (attachCommandHasUnescapableCmdPercent({ directory, dataDir, platform })) {
+    return `${reply}\nThis path contains \`%\`. Run the command in PowerShell. cmd.exe expands \`%VAR%\` and cannot escape percents.`
+  }
+  return reply
 }
 
 export async function handleSessionIdCommand({

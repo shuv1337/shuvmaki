@@ -49,7 +49,7 @@ import {
 import * as orm from 'drizzle-orm'
 import * as dbSchema from './schema.js'
 import { selectResolvedCommand } from './opencode-command.js'
-import { resolveOpencodeCommand } from './opencode.js'
+import { looksLikeUpstreamOpencodeBinary, resolveOpencodeCommand } from './opencode.js'
 import {
   Events,
   ChannelType,
@@ -1648,7 +1648,13 @@ export async function run({
   } else if (process.env.SHUVCODE_PATH && !process.env.OPENCODE_PATH) {
     process.env.OPENCODE_PATH = process.env.SHUVCODE_PATH
   } else if (process.env.OPENCODE_PATH && !process.env.SHUVCODE_PATH) {
-    process.env.SHUVCODE_PATH = process.env.OPENCODE_PATH
+    if (looksLikeUpstreamOpencodeBinary(process.env.OPENCODE_PATH)) {
+      cliLogger.warn(
+        `OPENCODE_PATH=${process.env.OPENCODE_PATH} is upstream opencode, not shuvcode. Ignoring it. Install shuvcode or set SHUVCODE_PATH.`,
+      )
+    } else {
+      process.env.SHUVCODE_PATH = process.env.OPENCODE_PATH
+    }
   }
 
   // Step 0: Ensure shuvcode and bun are installed

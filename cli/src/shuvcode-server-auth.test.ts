@@ -9,6 +9,7 @@ import { setDataDir } from './config.js'
 import { buildSessionIdAttachReply } from './commands/session-id.js'
 import {
   applyShuvcodeServerAuth,
+  attachCommandHasUnescapableCmdPercent,
   buildKimakiAttachCommand,
   buildKimakiAttachSpawn,
   buildOpencodePortDiscoveryPayload,
@@ -124,8 +125,23 @@ describe('shuvcode server auth handoff', () => {
         platform: 'win32',
       }),
     ).toBe(
-      'kimaki attach --session ses_test --dir "C:\\proj\\foo&bar|%%USERNAME%%" --data-dir "C:\\kimaki-custom"',
+      'kimaki attach --session ses_test --dir "C:\\proj\\foo&bar|%USERNAME%" --data-dir "C:\\kimaki-custom"',
     )
+    expect(
+      attachCommandHasUnescapableCmdPercent({
+        directory: 'C:\\proj\\foo&bar|%USERNAME%',
+        dataDir: 'C:\\kimaki-custom',
+        platform: 'win32',
+      }),
+    ).toBe(true)
+    expect(
+      buildSessionIdAttachReply({
+        sessionId: 'ses_test',
+        directory: 'C:\\proj\\foo%bar',
+        dataDir: 'C:\\kimaki-custom',
+        platform: 'win32',
+      }),
+    ).toContain('Run the command in PowerShell')
   })
 
   test('attach spawn args and env keep the secret out of argv', () => {

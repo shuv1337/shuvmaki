@@ -9,6 +9,9 @@ import {
   getOpencodeServerAuthHeaders,
   getShuvcodeCandidatePaths,
   getShuvcodePathOverride,
+  getShuvcodePathOverrideSource,
+  isShuvcodeCliVersionOutput,
+  looksLikeUpstreamOpencodeBinary,
 } from './opencode.js'
 
 describe('shuvcode binary resolution helpers', () => {
@@ -31,6 +34,34 @@ describe('shuvcode binary resolution helpers', () => {
         },
       }),
     ).toBe('/opt/shuvcode')
+    expect(
+      getShuvcodePathOverrideSource({
+        env: {
+          OPENCODE_PATH: '/opt/shuvcode',
+        },
+      }),
+    ).toEqual({ path: '/opt/shuvcode', source: 'OPENCODE_PATH' })
+  })
+
+  test('records which env var supplied the override', () => {
+    expect(
+      getShuvcodePathOverrideSource({
+        env: {
+          SHUVCODE_PATH: '/opt/shuvcode',
+          OPENCODE_PATH: '/opt/opencode',
+        },
+      }),
+    ).toEqual({ path: '/opt/shuvcode', source: 'SHUVCODE_PATH' })
+  })
+
+  test('rejects upstream opencode binaries and non-shuvcode version output', () => {
+    expect(looksLikeUpstreamOpencodeBinary('/usr/local/bin/opencode')).toBe(true)
+    expect(looksLikeUpstreamOpencodeBinary('C:\\Program Files\\nodejs\\opencode.cmd')).toBe(
+      true,
+    )
+    expect(looksLikeUpstreamOpencodeBinary('/usr/local/bin/shuvcode')).toBe(false)
+    expect(isShuvcodeCliVersionOutput('shuvcode v2.0.0-alpha-16')).toBe(true)
+    expect(isShuvcodeCliVersionOutput('opencode v1.18.3')).toBe(false)
   })
 
   test('ignores blank overrides', () => {

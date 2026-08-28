@@ -15,10 +15,23 @@ ENV PATH="/root/.bun/bin:$PATH"
 # IMPORTANT: always use the latest published version here.
 # Check with: npm view kimaki version
 # Bump this after publishing a new kimaki version, then fly deploy.
+#
+# DO NOT fly deploy a shuvcode-only image while this pin is still a
+# pre-cutover kimaki. kimaki@0.23.1 spawns
+# `opencode serve --port N --print-logs --log-level WARN`, and shuvcode
+# v2 serve rejects `--print-logs`. Keep the upstream opencode install
+# below until the pin moves to the first shuvcode-aware kimaki release
+# in the SAME commit. Then drop the opencode installer.
 RUN npm install -g kimaki@0.23.1
 
-# Pre-install shuvcode so kimaki doesn't need to fetch it at runtime.
-# Pin a specific version for reproducible demo deploys.
+# kimaki@0.23.1 still launches upstream opencode. Required until the pin
+# above is bumped. The installer can fail when GitHub API rate-limits
+# the version lookup, so pin a specific version.
+RUN curl -fsSL https://opencode.ai/install | bash -s -- --version 1.18.3
+ENV PATH="/root/.opencode/bin:$PATH"
+
+# Pre-install shuvcode so the next pin bump does not need a second image
+# change. Unused by kimaki@0.23.1.
 RUN npm install -g shuvcode@2.0.0-alpha-16
 
 # Pre-install tools the AI agent uses via bunx so first invocations are instant.

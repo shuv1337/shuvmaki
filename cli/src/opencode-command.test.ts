@@ -8,6 +8,7 @@ import {
   ensureKimakiCommandShim,
   getSpawnCommandAndArgs,
   quoteWindowsCommandSegment,
+  windowsCmdSegmentHasPercent,
   sanitizeShimExecArgv,
   selectResolvedCommand,
   splitCommandLookupOutput,
@@ -69,13 +70,17 @@ describe('getSpawnCommandAndArgs', () => {
     })
   })
 
-  test('quotes cmd metacharacters and percent signs in every segment', () => {
+  test('quotes cmd metacharacters and leaves percent signs untouched', () => {
     expect(quoteWindowsCommandSegment('C:\\proj\\foo&bar|baz^qux')).toBe(
       '"C:\\proj\\foo&bar|baz^qux"',
     )
+    // Doubling `%` is a .bat-file rule only. On `cmd /c` it still expands
+    // `%VAR%` and turns a literal `foo%bar` into `foo%%bar`.
     expect(quoteWindowsCommandSegment('C:\\Users\\%USERNAME%\\proj')).toBe(
-      '"C:\\Users\\%%USERNAME%%\\proj"',
+      '"C:\\Users\\%USERNAME%\\proj"',
     )
+    expect(windowsCmdSegmentHasPercent('C:\\Users\\%USERNAME%\\proj')).toBe(true)
+    expect(windowsCmdSegmentHasPercent('C:\\proj\\foo&bar')).toBe(false)
     expect(
       getSpawnCommandAndArgs({
         resolvedCommand: 'C:\\Program Files\\nodejs\\shuvcode.cmd',

@@ -49,8 +49,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 export type ShuvcodeSessionPermissionRule = {
   permission: string
-  pattern?: string
-  action: string
+  pattern: string
+  action: 'allow' | 'deny' | 'ask' | string
 }
 
 export function splitShuvcodeSessionPermissionRules(permission: unknown): {
@@ -66,7 +66,11 @@ export function splitShuvcodeSessionPermissionRules(permission: unknown): {
     if (!isRecord(rule) || typeof rule.permission !== 'string') continue
     const action = typeof rule.action === 'string' ? rule.action : ''
     const pattern = typeof rule.pattern === 'string' ? rule.pattern : '*'
-    const normalized = { permission: rule.permission, pattern, action }
+    const normalized: ShuvcodeSessionPermissionRule = {
+      permission: rule.permission,
+      pattern,
+      action,
+    }
     if (action === 'allow' && (pattern === '*' || pattern.length === 0)) {
       if (!allowTools.includes(rule.permission)) allowTools.push(rule.permission)
       translatable.push(normalized)
@@ -629,7 +633,7 @@ function mapShuvcodeSessionMessage(message: unknown): Record<string, unknown> {
         tokens: message.tokens,
         cost: message.cost ?? 0,
       },
-      parts: content.flatMap((part) => {
+      parts: content.flatMap((part): Record<string, unknown>[] => {
         if (!isRecord(part)) return []
         if (part.type === 'text' && typeof part.text === 'string') {
           return [{ type: 'text', text: part.text }]

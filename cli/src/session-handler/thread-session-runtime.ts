@@ -4253,7 +4253,7 @@ export class ThreadSessionRuntime {
     sessionId: string
     createdNewSession: boolean
     permissions?: string[]
-  }) {
+  }): Promise<Error | null> {
     if (createdNewSession) {
       return null
     }
@@ -4353,8 +4353,7 @@ export class ThreadSessionRuntime {
         }),
         ...parsePermissionRules(permissions ?? []),
       ]
-      const { translatable, untranslatable } =
-        splitShuvcodeSessionPermissionRules(sessionPermissions)
+      const { untranslatable } = splitShuvcodeSessionPermissionRules(sessionPermissions)
       if (untranslatable.length > 0) {
         logger.warn(
           `[ENSURE SESSION] Gating untranslatable shuvcode permission rules: ${untranslatable
@@ -4362,10 +4361,19 @@ export class ThreadSessionRuntime {
             .join(', ')}`,
         )
       }
+      const translatablePermissions = sessionPermissions.filter((rule) => {
+        return !untranslatable.some((blocked) => {
+          return (
+            blocked.permission === rule.permission &&
+            blocked.pattern === (rule.pattern ?? '*') &&
+            blocked.action === rule.action
+          )
+        })
+      })
       // Omit title so OpenCode auto-generates a summary from the conversation
       const createResult = await getClient().session.create({
         directory: this.sdkDirectory,
-        permission: translatable,
+        permission: translatablePermissions,
       }).catch((e) => new OpenCodeSdkError({ operation: 'session.create', cause: e }))
       if (createResult instanceof Error) {
         logger.error(

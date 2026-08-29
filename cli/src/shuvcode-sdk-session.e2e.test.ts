@@ -18,6 +18,7 @@ import {
   buildShuvcodeSdkBaseUrl,
   createShuvcodeSdkFetch,
   isReusableShuvcodeHealthResponse,
+  rewriteShuvcodeSdkRequest,
 } from './shuvcode-sdk-url.js'
 import { chooseLockPort } from './test-utils.js'
 
@@ -121,9 +122,46 @@ test(
     const created = await client.session.create({
       directory: projectDir,
       title: 'shuvcode-sdk-session-e2e',
+      permission: [{ permission: 'bash', action: 'allow', pattern: '*' }],
     })
     expect(created.error).toBeUndefined()
     expect(created.data?.id).toMatch(/^ses_/)
+
+    const denied = await rewriteShuvcodeSdkRequest(
+      new Request(`${buildShuvcodeSdkBaseUrl({ port })}/session`, {
+        method: 'POST',
+        headers: {
+          Authorization: buildShuvcodeBasicAuthHeader(serveAuth),
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          directory: projectDir,
+          permission: [
+            { permission: 'external_directory', action: 'deny', pattern: '/repo' },
+          ],
+        }),
+      }),
+    )
+    expect(denied).toBeInstanceOf(Response)
+    expect((denied as Response).status).toBe(422)
+
+    const providers = await client.provider.list({ directory: projectDir })
+    expect(created.error).toBeUndefined()
+    expect(Array.isArray(providers.data?.all)).toBe(true)
+    expect(Array.isArray(providers.data?.connected)).toBe(true)
+
+    if (typeof client.session.promptAsync === 'function') {
+      const prompt = await client.session.promptAsync({
+        sessionID: created.data!.id,
+        directory: projectDir,
+        parts: [{ type: 'text', text: 'context only, do not reply' }],
+        noReply: true,
+      })
+      expect(prompt.error).toBeUndefined()
+      const status = await client.session.status({ directory: projectDir })
+      const sessionStatus = status.data?.[created.data!.id]
+      expect(!sessionStatus || sessionStatus.type === 'idle').toBe(true)
+    }
   },
   60_000,
 )

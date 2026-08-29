@@ -5,6 +5,11 @@
 // The bot's event sourcing reads `{ type, properties }` (`message.updated`,
 // `message.part.updated`, `session.status`, `session.idle`).
 
+import {
+  rememberShuvcodeForm,
+  rememberShuvcodePermissionRequest,
+} from './shuvcode-adapter-state.js'
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
@@ -79,6 +84,47 @@ function sessionIdle(sessionID: string) {
   }
 }
 
+function sessionError({
+  sessionID,
+  error,
+}: {
+  sessionID: string
+  error: unknown
+}) {
+  const record = isRecord(error) ? error : {}
+  const message =
+    asString(record.message) ??
+    asString(record.type) ??
+    (typeof error === 'string' ? error : 'Session failed')
+  return {
+    type: 'session.error',
+    properties: {
+      sessionID,
+      error: {
+        name: asString(record.type) ?? asString(record.name) ?? 'SessionError',
+        data: {
+          message,
+          statusCode: asNumber(record.status),
+        },
+      },
+    },
+  }
+}
+
+function executionTerminalEvents({
+  sessionID,
+  error,
+}: {
+  sessionID: string
+  error?: unknown
+}) {
+  return [
+    ...(error === undefined ? [] : [sessionError({ sessionID, error })]),
+    sessionStatus({ sessionID, type: 'idle' }),
+    sessionIdle(sessionID),
+  ]
+}
+
 function emptyTokens() {
   return {
     input: 0,
@@ -102,12 +148,55 @@ function readTokens(value: unknown) {
   }
 }
 
+function mapFormFieldToQuestion(field: unknown): Array<{
+  question: string
+  header: string
+  options: Array<{ label: string; description?: string }>
+  multiSelect: boolean
+}> {
+  if (!isRecord(field)) return []
+  const title = asString(field.title) ?? asString(field.key) ?? 'Question'
+  const description = asString(field.description)
+  const options = Array.isArray(field.options)
+    ? field.options.flatMap((option) => {
+        if (!isRecord(option)) return []
+        const label = asString(option.label) ?? asString(option.value)
+        if (!label) return []
+        const optionDescription = asString(option.description)
+        return [
+          optionDescription
+            ? { label, description: optionDescription }
+            : { label },
+        ]
+      })
+    : field.type === 'boolean'
+      ? [{ label: 'Yes' }, { label: 'No' }]
+      : []
+  if (options.length < 2) {
+    options.push({ label: 'Yes' }, { label: 'No' })
+  }
+  return [
+    {
+      question: description || title,
+      header: title.slice(0, 12),
+      options,
+      multiSelect: field.type === 'multiselect',
+    },
+  ]
+}
+
 function readModel(value: unknown): { id: string; providerID: string } | undefined {
   if (!isRecord(value)) return undefined
   const id = asString(value.id) ?? asString(value.modelID)
   const providerID = asString(value.providerID)
   if (!id || !providerID) return undefined
   return { id, providerID }
+}
+
+export type ShuvcodeToolCallState = {
+  name: string
+  input: Record<string, unknown>
+  messageID?: string
 }
 
 export type ShuvcodeEventTranslateState = {
@@ -121,12 +210,52 @@ export type ShuvcodeEventTranslateState = {
       providerID?: string
     }
   >
+  toolsByCallId: Map<string, ShuvcodeToolCallState>
 }
 
 export function createShuvcodeEventTranslateState(): ShuvcodeEventTranslateState {
   return {
     lastUserMessageIdBySession: new Map(),
     lastAssistantBySession: new Map(),
+    toolsByCallId: new Map(),
+  }
+}
+
+function rememberToolCall({
+  state,
+  toolID,
+  name,
+  input,
+  messageID,
+}: {
+  state: ShuvcodeEventTranslateState
+  toolID: string
+  name?: string
+  input?: Record<string, unknown>
+  messageID?: string
+}): ShuvcodeToolCallState {
+  const existing = state.toolsByCallId.get(toolID)
+  const remembered: ShuvcodeToolCallState = {
+    name: name || existing?.name || 'tool',
+    input: input && Object.keys(input).length > 0 ? input : existing?.input ?? {},
+    messageID: messageID || existing?.messageID,
+  }
+  state.toolsByCallId.set(toolID, remembered)
+  return remembered
+}
+
+function readToolInput(value: unknown): Record<string, unknown> | undefined {
+  if (isRecord(value)) return value
+  if (typeof value !== 'string' || value.length === 0) return undefined
+  const parsed = erroreTryJson(value)
+  return isRecord(parsed) ? parsed : undefined
+}
+
+function erroreTryJson(raw: string): unknown {
+  try {
+    return JSON.parse(raw) as unknown
+  } catch {
+    return undefined
   }
 }
 
@@ -317,11 +446,38 @@ export function translateShuvcodeEvent(
     case 'session.execution.started':
       return sessionID ? [sessionStatus({ sessionID, type: 'busy' })] : []
     case 'session.execution.succeeded':
-    case 'session.execution.failed':
     case 'session.execution.interrupted':
       return sessionID
         ? [sessionStatus({ sessionID, type: 'idle' }), sessionIdle(sessionID)]
         : []
+    case 'session.execution.failed':
+      return sessionID
+        ? executionTerminalEvents({ sessionID, error: data.error })
+        : []
+    case 'session.step.failed': {
+      const messageID = asString(data.assistantMessageID)
+      if (!sessionID) return []
+      return [
+        ...(messageID
+          ? [
+              messageUpdated(
+                assistantMessageInfo({
+                  sessionID,
+                  messageID,
+                  created,
+                  completed: created,
+                  parentID: state.lastUserMessageIdBySession.get(sessionID),
+                  agent: state.lastAssistantBySession.get(sessionID)?.agent,
+                  modelID: state.lastAssistantBySession.get(sessionID)?.modelID,
+                  providerID: state.lastAssistantBySession.get(sessionID)?.providerID,
+                  finish: asString(data.finish) ?? 'error',
+                }),
+              ),
+            ]
+          : []),
+        sessionError({ sessionID, error: data.error }),
+      ]
+    }
     case 'session.step.started': {
       const messageID = asString(data.assistantMessageID)
       if (!sessionID || !messageID) return []
@@ -417,11 +573,41 @@ export function translateShuvcodeEvent(
         }),
       ]
     }
+    case 'session.tool.input.started': {
+      const toolID = asString(data.id)
+      const name = asString(data.name)
+      const messageID = asString(data.assistantMessageID)
+      if (!sessionID || !toolID) return []
+      rememberToolCall({
+        state,
+        toolID,
+        name,
+        messageID,
+      })
+      return []
+    }
+    case 'session.tool.input.ended': {
+      const toolID = asString(data.id)
+      if (!sessionID || !toolID) return []
+      rememberToolCall({
+        state,
+        toolID,
+        input: readToolInput(data.text) ?? readToolInput(data.input),
+        messageID: asString(data.assistantMessageID),
+      })
+      return []
+    }
     case 'session.tool.called': {
       const messageID = asString(data.assistantMessageID)
       const toolID = asString(data.id)
-      const tool = asString(data.name) ?? asString(data.tool) ?? 'tool'
       if (!sessionID || !messageID || !toolID) return []
+      const remembered = rememberToolCall({
+        state,
+        toolID,
+        name: asString(data.name) ?? asString(data.tool),
+        input: readToolInput(data.input),
+        messageID,
+      })
       return [
         partUpdated({
           id: toolPartId({ sessionID, toolID }),
@@ -429,10 +615,10 @@ export function translateShuvcodeEvent(
           messageID,
           type: 'tool',
           callID: toolID,
-          tool,
+          tool: remembered.name,
           state: {
             status: 'running',
-            input: isRecord(data.input) ? data.input : {},
+            input: remembered.input,
             time: { start: created },
           },
         }),
@@ -441,7 +627,16 @@ export function translateShuvcodeEvent(
     case 'session.tool.success': {
       const messageID = asString(data.assistantMessageID)
       const toolID = asString(data.id)
-      if (!sessionID || !messageID || !toolID) return []
+      if (!sessionID || !toolID) return []
+      const remembered = rememberToolCall({
+        state,
+        toolID,
+        name: asString(data.name) ?? asString(data.tool),
+        input: readToolInput(data.input),
+        messageID,
+      })
+      const resolvedMessageID = messageID || remembered.messageID
+      if (!resolvedMessageID) return []
       const content = Array.isArray(data.content) ? data.content : []
       const output = content
         .map((item) =>
@@ -453,15 +648,15 @@ export function translateShuvcodeEvent(
         partUpdated({
           id: toolPartId({ sessionID, toolID }),
           sessionID,
-          messageID,
+          messageID: resolvedMessageID,
           type: 'tool',
           callID: toolID,
-          tool: asString(data.name) ?? asString(data.tool) ?? 'tool',
+          tool: remembered.name,
           state: {
             status: 'completed',
-            input: {},
+            input: remembered.input,
             output,
-            title: asString(data.name) ?? 'tool',
+            title: remembered.name,
             metadata: isRecord(data.metadata) ? data.metadata : {},
             time: { start: created, end: created },
           },
@@ -471,7 +666,16 @@ export function translateShuvcodeEvent(
     case 'session.tool.failed': {
       const messageID = asString(data.assistantMessageID)
       const toolID = asString(data.id)
-      if (!sessionID || !messageID || !toolID) return []
+      if (!sessionID || !toolID) return []
+      const remembered = rememberToolCall({
+        state,
+        toolID,
+        name: asString(data.name) ?? asString(data.tool),
+        input: readToolInput(data.input),
+        messageID,
+      })
+      const resolvedMessageID = messageID || remembered.messageID
+      if (!resolvedMessageID) return []
       const error = isRecord(data.error)
         ? asString(data.error.message) ?? asString(data.error.type) ?? 'tool failed'
         : 'tool failed'
@@ -479,17 +683,107 @@ export function translateShuvcodeEvent(
         partUpdated({
           id: toolPartId({ sessionID, toolID }),
           sessionID,
-          messageID,
+          messageID: resolvedMessageID,
           type: 'tool',
           callID: toolID,
-          tool: asString(data.name) ?? asString(data.tool) ?? 'tool',
+          tool: remembered.name,
           state: {
             status: 'error',
-            input: {},
+            input: remembered.input,
             error,
             time: { start: created, end: created },
           },
         }),
+      ]
+    }
+    case 'permission.asked': {
+      const requestID = asString(data.id)
+      const permissionSessionID = sessionID || asString(data.sessionID)
+      if (!requestID || !permissionSessionID) return []
+      rememberShuvcodePermissionRequest({
+        requestID,
+        sessionID: permissionSessionID,
+      })
+      const resources = Array.isArray(data.resources)
+        ? data.resources.filter((item): item is string => typeof item === 'string')
+        : []
+      const save = Array.isArray(data.save)
+        ? data.save.filter((item): item is string => typeof item === 'string')
+        : []
+      return [
+        {
+          type: 'permission.asked',
+          properties: {
+            id: requestID,
+            sessionID: permissionSessionID,
+            permission: asString(data.action) ?? asString(data.permission) ?? 'tool',
+            patterns: resources.length > 0 ? resources : ['*'],
+            always: save,
+            metadata: isRecord(data.metadata) ? data.metadata : {},
+          },
+        },
+      ]
+    }
+    case 'permission.replied': {
+      const requestID = asString(data.requestID) ?? asString(data.id)
+      const permissionSessionID = sessionID || asString(data.sessionID)
+      if (!requestID || !permissionSessionID) return []
+      return [
+        {
+          type: 'permission.replied',
+          properties: {
+            requestID,
+            sessionID: permissionSessionID,
+            reply: asString(data.reply) ?? 'reject',
+          },
+        },
+      ]
+    }
+    case 'form.created': {
+      const form = isRecord(data.form) ? data.form : data
+      const formID = asString(form.id)
+      const formSessionID = asString(form.sessionID) || sessionID
+      const fields = Array.isArray(form.fields) ? form.fields : []
+      if (!formID || !formSessionID) return []
+      rememberShuvcodeForm({
+        formID,
+        sessionID: formSessionID,
+        fields: fields.flatMap((field) => {
+          if (!isRecord(field) || typeof field.key !== 'string') return []
+          return [{ key: field.key, type: asString(field.type) ?? 'string' }]
+        }),
+      })
+      return [
+        {
+          type: 'question.asked',
+          properties: {
+            id: formID,
+            sessionID: formSessionID,
+            questions: fields.flatMap((field) => mapFormFieldToQuestion(field)),
+          },
+        },
+      ]
+    }
+    case 'form.replied': {
+      const formID = asString(data.id)
+      const formSessionID = sessionID || asString(data.sessionID)
+      if (!formID || !formSessionID) return []
+      return [
+        {
+          type: 'question.replied',
+          properties: { sessionID: formSessionID, requestID: formID },
+        },
+      ]
+    }
+    case 'form.cancelled': {
+      const formID = asString(data.id)
+      const formSessionID = sessionID || asString(data.sessionID)
+      if (!formID || !formSessionID) return []
+      return [
+        {
+          type: 'question.rejected',
+          properties: { sessionID: formSessionID, requestID: formID },
+        },
       ]
     }
     default:

@@ -201,6 +201,7 @@ describe('shuvcode binary resolution helpers', () => {
     ).toEqual({
       title: 'hello',
       location: { directory: '/tmp/project' },
+      policy: { tools: { allow: ['bash'] } },
     })
     expect(
       rewriteShuvcodePromptBody({
@@ -225,6 +226,7 @@ describe('shuvcode binary resolution helpers', () => {
         variant: 'high',
         noReply: true,
       },
+      resume: false,
     })
     expect(
       readShuvcodePromptModel({
@@ -246,6 +248,21 @@ describe('shuvcode binary resolution helpers', () => {
         new URL('http://127.0.0.1:4096/api/session/ses_1/abort'),
       ).pathname,
     ).toBe('/api/session/ses_1/interrupt')
+    expect(
+      rewriteShuvcodeRequestUrl(
+        new URL('http://127.0.0.1:4096/api/session/ses_1/revert'),
+      ).pathname,
+    ).toBe('/api/session/ses_1/revert/stage')
+    expect(
+      rewriteShuvcodeRequestUrl(
+        new URL('http://127.0.0.1:4096/api/session/ses_1/unrevert'),
+      ).pathname,
+    ).toBe('/api/session/ses_1/revert/clear')
+    expect(
+      rewriteShuvcodeRequestUrl(
+        new URL('http://127.0.0.1:4096/api/session/ses_1/summarize'),
+      ).pathname,
+    ).toBe('/api/session/ses_1/compact')
     expect(unwrapShuvcodeJsonBody({ data: { id: 'ses_1' } })).toEqual({
       id: 'ses_1',
     })

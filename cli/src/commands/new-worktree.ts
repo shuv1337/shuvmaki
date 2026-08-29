@@ -18,7 +18,6 @@ import {
   setWorkspaceError,
   getChannelDirectory,
   getThreadSession,
-  getThreadWorktreeOrWorkspace,
   setThreadSession,
 } from '../database.js'
 import {
@@ -600,15 +599,6 @@ async function handleWorktreeInThread({
         return
       }
 
-      const workspace = await getThreadWorktreeOrWorkspace(worktreeThread.id)
-      if (!workspace?.workspace_id) {
-        await sendThreadMessage(
-          worktreeThread,
-          '✗ Worktree is ready, but OpenCode returned no workspace ID for context reuse.',
-        )
-        return
-      }
-
       const getClient = await initializeOpencodeForDirectory(result, {
         originalRepoDirectory: projectDirectory,
         channelId: parent.id,
@@ -624,7 +614,6 @@ async function handleWorktreeInThread({
       const forkResponse = await getClient().session.fork({
         sessionID: sourceSessionId,
         directory: result,
-        workspace: workspace.workspace_id,
       }).catch((e) => new OpenCodeSdkError({ operation: 'session.fork', cause: e }))
       if (forkResponse instanceof Error) {
         logger.error('[NEW-WORKTREE] Failed to fork session into worktree:', forkResponse)
@@ -657,25 +646,14 @@ async function handleWorktreeInThread({
         directory: projectDirectory,
       })
 
-      const permissionResponse = await getClient().session.update({
-        sessionID: forkedSession.id,
+      const isolationRules = buildSessionPermissions({
         directory: result,
-        permission: buildSessionPermissions({
-          directory: result,
-          originalRepoDirectory: projectDirectory,
-        }),
-      }).catch((e) => new OpenCodeSdkError({ operation: 'session.update', cause: e }))
-      if (permissionResponse instanceof Error || permissionResponse.error) {
-        const error = permissionResponse instanceof Error
-          ? permissionResponse
-          : new Error('OpenCode rejected forked session permission update')
-        logger.error('[NEW-WORKTREE] Failed to update forked session permissions:', error)
-        void notifyError(error, 'Failed to update forked session permissions')
-        await sendThreadMessage(
-          worktreeThread,
-          `✗ Worktree is ready, but failed to update forked session permissions: ${error.message}`,
+        originalRepoDirectory: projectDirectory,
+      })
+      if (isolationRules.length > 0) {
+        logger.warn(
+          '[NEW-WORKTREE] Skipping forked session permission update; shuvcode has no session.update policy route',
         )
-        return
       }
 
       await setThreadSession(worktreeThread.id, forkedSession.id)
@@ -689,7 +667,9 @@ async function handleWorktreeInThread({
       })
       await sendThreadMessage(
         worktreeThread,
-        `Reusing context from <#${thread.id}> in worktree session \`${forkedSession.id}\`.`,
+        isolationRules.length > 0
+          ? `Reusing context from <#${thread.id}> in worktree session \`${forkedSession.id}\`. Origin-checkout isolation is not available on shuvcode; the session runs in this worktree directory.`
+          : `Reusing context from <#${thread.id}> in worktree session \`${forkedSession.id}\`.`,
       )
     })
     .catch((e) => {

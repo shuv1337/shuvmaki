@@ -1,30 +1,40 @@
-// E2e test for OpenCode plugin loading.
-// Spawns `opencode serve` directly with our plugin in OPENCODE_CONFIG_CONTENT,
+// E2e test for shuvcode plugin loading.
+// Spawns `shuvcode serve` directly with our plugin in OPENCODE_CONFIG_CONTENT,
 // waits for the health endpoint, then checks stderr for plugin errors.
-// No Discord infrastructure needed — just the OpenCode server process.
+// No Discord infrastructure needed — just the shuvcode server process.
 
 import { spawn, type ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { test, expect } from 'vitest'
-import { resolveOpencodeCommand } from './opencode.js'
+import { buildShuvcodeServeArgs, resolveOpencodeCommand } from './opencode.js'
 import { getSpawnCommandAndArgs } from './opencode-command.js'
+import { buildShuvcodeBasicAuthHeader } from './shuvcode-server-auth.js'
 import { chooseLockPort } from './test-utils.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 async function waitForHealth({
   port,
+  authorization,
   maxAttempts = 30,
 }: {
   port: number
+  authorization: string
   maxAttempts?: number
 }): Promise<boolean> {
   for (let i = 0; i < maxAttempts; i++) {
     try {
-      const response = await fetch(`http://127.0.0.1:${port}/api/health`)
-      if (response.status < 500) {
+      const response = await fetch(`http://127.0.0.1:${port}/api/health`, {
+        headers: { Authorization: authorization },
+      })
+      const contentType = response.headers.get('content-type') || ''
+      if (
+        response.status >= 200 &&
+        response.status < 300 &&
+        contentType.toLowerCase().includes('application/json')
+      ) {
         return true
       }
     } catch {
@@ -66,8 +76,13 @@ test(
       windowsVerbatimArguments,
     } = getSpawnCommandAndArgs({
       resolvedCommand: resolveOpencodeCommand(),
-      baseArgs: ['serve', '--port', port.toString(), '--print-logs', '--log-level', 'DEBUG'],
+      baseArgs: buildShuvcodeServeArgs({ port }),
     })
+
+    const serveAuth = {
+      username: 'opencode',
+      password: 'plugin-loading-e2e-secret',
+    }
 
     const serverProcess: ChildProcess = spawn(command, args, {
       stdio: 'pipe',
@@ -75,6 +90,9 @@ test(
       windowsVerbatimArguments,
       env: {
         ...process.env,
+        OPENCODE_PASSWORD: serveAuth.password,
+        OPENCODE_SERVER_PASSWORD: serveAuth.password,
+        OPENCODE_SERVER_USERNAME: serveAuth.username,
         OPENCODE_CONFIG_CONTENT: JSON.stringify({
           $schema: 'https://opencode.ai/config.json',
           lsp: false,
@@ -91,7 +109,10 @@ test(
     })
 
     try {
-      const healthy = await waitForHealth({ port })
+      const healthy = await waitForHealth({
+        port,
+        authorization: buildShuvcodeBasicAuthHeader(serveAuth),
+      })
       expect(healthy).toBe(true)
 
       // Check no plugin-related errors in stderr

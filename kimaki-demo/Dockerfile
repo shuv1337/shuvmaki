@@ -4,10 +4,10 @@
 
 FROM node:24-slim
 
-# git, curl, unzip are required (git for opencode, curl+unzip for bun installer)
+# git, curl, unzip are required (git for shuvcode, curl+unzip for bun installer)
 RUN apt-get update && apt-get install -y git curl unzip && rm -rf /var/lib/apt/lists/*
 
-# Install bun (required by opencode)
+# Install bun (required by shuvcode)
 RUN curl -fsSL https://bun.sh/install | bash
 ENV PATH="/root/.bun/bin:$PATH"
 
@@ -15,13 +15,24 @@ ENV PATH="/root/.bun/bin:$PATH"
 # IMPORTANT: always use the latest published version here.
 # Check with: npm view kimaki version
 # Bump this after publishing a new kimaki version, then fly deploy.
+#
+# DO NOT fly deploy a shuvcode-only image while this pin is still a
+# pre-cutover kimaki. kimaki@0.23.1 spawns
+# `opencode serve --port N --print-logs --log-level WARN`, and shuvcode
+# v2 serve rejects `--print-logs`. Keep the upstream opencode install
+# below until the pin moves to the first shuvcode-aware kimaki release
+# in the SAME commit. Then drop the opencode installer.
 RUN npm install -g kimaki@0.23.1
 
-# Pre-install opencode so kimaki doesn't need to fetch it at runtime.
-# The opencode installer can fail when GitHub API rate-limits the version lookup.
-# Pin a specific version to bypass the API call entirely.
+# kimaki@0.23.1 still launches upstream opencode. Required until the pin
+# above is bumped. The installer can fail when GitHub API rate-limits
+# the version lookup, so pin a specific version.
 RUN curl -fsSL https://opencode.ai/install | bash -s -- --version 1.18.3
 ENV PATH="/root/.opencode/bin:$PATH"
+
+# Pre-install shuvcode so the next pin bump does not need a second image
+# change. Unused by kimaki@0.23.1.
+RUN npm install -g shuvcode@2.0.0-alpha-16
 
 # Pre-install tools the AI agent uses via bunx so first invocations are instant.
 # critique: diff viewing and sharing (bunx critique --web)
@@ -36,7 +47,7 @@ ENV OPENCODE_ENABLE_EXA=1
 
 WORKDIR /data
 
-# Allow opencode to read/write all directories without prompting.
+# Allow shuvcode to read/write all directories without prompting.
 # The demo server creates projects in /data/projects and the agent needs
 # unrestricted filesystem access since there is no human to approve prompts.
 RUN mkdir -p /root/.config/opencode && \

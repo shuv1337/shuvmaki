@@ -35,6 +35,7 @@
 // Uses errore for type-safe error handling.
 
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process'
+import { randomBytes } from 'node:crypto'
 import fs from 'node:fs'
 import http from 'node:http'
 import net from 'node:net'
@@ -62,6 +63,17 @@ import {
 } from './config.js'
 import { store } from './store.js'
 import { getHranaUrl } from './hrana-server.js'
+import {
+  applyShuvcodeServerAuth,
+  getShuvcodeServerAuthSnapshot,
+  persistShuvcodeServerAuth,
+  resolveShuvcodeServerHandoff,
+} from './shuvcode-server-auth.js'
+import {
+  buildShuvcodeSdkBaseUrl,
+  createShuvcodeSdkFetch,
+  isReusableShuvcodeHealthResponse,
+} from './shuvcode-sdk-url.js'
 
 // SDK Config type is simplified; opencode accepts nested permission objects with path patterns
 type PermissionAction = 'ask' | 'allow' | 'deny'
@@ -98,14 +110,53 @@ import { computeSkillPermission } from './skill-filter.js'
 const opencodeLogger = createLogger(LogPrefix.OPENCODE)
 
 /**
+ * shuvcode serve always requires a password. Honor an existing
+ * OPENCODE_PASSWORD / OPENCODE_SERVER_PASSWORD, otherwise generate one and
+ * keep both names in sync (the fork still reads both).
+ */
+export function ensureShuvcodeServerPassword({
+  env = process.env,
+  dataDir = getDataDir(),
+}: {
+  env?: NodeJS.ProcessEnv
+  dataDir?: string
+} = {}): string {
+  const existing = env.OPENCODE_PASSWORD || env.OPENCODE_SERVER_PASSWORD
+  const password = existing && existing.trim().length > 0
+    ? existing
+    : randomBytes(32).toString('base64url')
+  const username = env.OPENCODE_SERVER_USERNAME || 'opencode'
+  applyShuvcodeServerAuth({
+    auth: { username, password },
+    env,
+  })
+  const persisted = persistShuvcodeServerAuth({
+    dataDir,
+    auth: { username, password },
+  })
+  if (persisted instanceof Error) {
+    opencodeLogger.warn(
+      `Could not persist shuvcode server password for CLI reuse: ${persisted.message}`,
+    )
+  }
+  return password
+}
+
+/**
  * Build Basic auth headers from OPENCODE_SERVER_PASSWORD env var.
+ * Falls back to the 0600 data-dir handoff file when env is unset.
  * Returns empty object when no password is set.
  */
-export function getOpencodeServerAuthHeaders(): Record<string, string> {
-  const serverPassword = process.env.OPENCODE_SERVER_PASSWORD
-  if (!serverPassword) return {}
-  const username = process.env.OPENCODE_SERVER_USERNAME || 'opencode'
-  const encoded = Buffer.from(`${username}:${serverPassword}`).toString('base64')
+export function getOpencodeServerAuthHeaders({
+  dataDir = getDataDir(),
+  env = process.env,
+}: {
+  dataDir?: string
+  env?: NodeJS.ProcessEnv
+} = {}): Record<string, string> {
+  const auth = getShuvcodeServerAuthSnapshot({ dataDir, env })
+  if (!auth) return {}
+  const encoded = Buffer.from(`${auth.username}:${auth.password}`).toString('base64')
   return { Authorization: `Basic ${encoded}` }
 }
 
@@ -125,7 +176,7 @@ export async function requestHealthcheck({
 }: {
   url: string
   timeoutMs?: number
-}): Promise<{ status: number; body: string }> {
+}): Promise<{ status: number; body: string; contentType: string }> {
   return new Promise((resolve, reject) => {
     let settled = false
     let timeout: NodeJS.Timeout | null = null
@@ -144,6 +195,7 @@ export async function requestHealthcheck({
         method: 'GET',
         headers: {
           connection: 'close',
+          ...getOpencodeServerAuthHeaders(),
         },
       },
       (res) => {
@@ -153,9 +205,13 @@ export async function requestHealthcheck({
         })
         res.on('end', () => {
           settle(() => {
+            const contentType = res.headers['content-type']
             resolve({
               status: res.statusCode || 0,
               body: Buffer.concat(chunks).toString('utf-8'),
+              contentType: Array.isArray(contentType)
+                ? contentType.join(';')
+                : contentType || '',
             })
           })
         })
@@ -447,21 +503,139 @@ function ensureProcessCleanupHandlersRegistered(): void {
   })
 }
 
-// ── Resolve opencode binary ──────────────────────────────────────
-// Resolve the full path to the opencode binary so we can spawn without
+// ── Resolve shuvcode binary ──────────────────────────────────────
+// Resolve the full path to the shuvcode binary so we can spawn without
 // shell: true. Using shell: true creates an intermediate sh process — when
-// cleanup sends SIGTERM it only kills the shell, leaving the actual opencode
+// cleanup sends SIGTERM it only kills the shell, leaving the actual shuvcode
 // process orphaned (reparented to PID 1). Resolving the path upfront lets
 // us spawn the binary directly and SIGTERM reaches the right process.
 //
-// Resolution order:
-// 1. OPENCODE_PATH env var (explicit user override)
-// 2. `which shuvcode` then `which opencode` (prefer this fork's CLI)
-// 3. Common install locations for shuvcode, then opencode
-// 4. Fall back to bare "opencode" (spawn will fail with a clear error)
+// This project is shuvcode-only (Latitudes-Dev/shuvcode, OpenCode v2).
+// Upstream `opencode` is never discovered or installed.
 //
-// OpenCode/shuvcode must be installed globally before running shuvmaki. The bot
+// Resolution order:
+// 1. SHUVCODE_PATH, then OPENCODE_PATH (explicit override; the fork still
+//    uses OPENCODE_* env names internally)
+// 2. `which shuvcode`
+// 3. Common shuvcode install locations
+// 4. Fall back to bare "shuvcode" (spawn will fail with a clear error)
+//
+// shuvcode must be installed globally before running shuvmaki. The bot
 // startup checks for it via ensureCommandAvailable and prompts to install if missing.
+
+export const SHUVCODE_BIN_NAME = 'shuvcode'
+
+export type ShuvcodePathOverrideSource = 'SHUVCODE_PATH' | 'OPENCODE_PATH'
+
+export function getShuvcodePathOverrideSource({
+  env = process.env,
+}: {
+  env?: NodeJS.ProcessEnv
+} = {}): { path: string; source: ShuvcodePathOverrideSource } | undefined {
+  const shuvcodePath = env.SHUVCODE_PATH?.trim()
+  if (shuvcodePath) return { path: shuvcodePath, source: 'SHUVCODE_PATH' }
+  const opencodePath = env.OPENCODE_PATH?.trim()
+  if (opencodePath) return { path: opencodePath, source: 'OPENCODE_PATH' }
+  return undefined
+}
+
+export function getShuvcodePathOverride({
+  env = process.env,
+}: {
+  env?: NodeJS.ProcessEnv
+} = {}): string | undefined {
+  return getShuvcodePathOverrideSource({ env })?.path
+}
+
+export function looksLikeUpstreamOpencodeBinary(resolvedPath: string): boolean {
+  const normalized = resolvedPath.replaceAll('\\', '/')
+  const base = path.posix.basename(normalized).toLowerCase()
+  return (
+    base === 'opencode' ||
+    base === 'opencode.exe' ||
+    base === 'opencode.cmd' ||
+    base === 'opencode.bat'
+  )
+}
+
+export function isShuvcodeCliVersionOutput(output: string): boolean {
+  return /shuvcode/i.test(output)
+}
+
+function readResolvedBinaryVersion({ command }: { command: string }): string | null {
+  const result = errore.try(
+    () =>
+      execFileSync(command, ['--version'], {
+        encoding: 'utf8',
+        timeout: 5000,
+      }),
+    () => null,
+  )
+  if (result === null || typeof result !== 'string') return null
+  return result
+}
+
+function acceptResolvedShuvcodeOverride({
+  resolvedPath,
+  source,
+}: {
+  resolvedPath: string
+  source: ShuvcodePathOverrideSource
+}): boolean {
+  if (looksLikeUpstreamOpencodeBinary(resolvedPath)) {
+    opencodeLogger.warn(
+      `${source} points at upstream opencode (${resolvedPath}). Ignoring it. Set SHUVCODE_PATH to a shuvcode binary.`,
+    )
+    return false
+  }
+  const version = readResolvedBinaryVersion({ command: resolvedPath })
+  if (version !== null && !isShuvcodeCliVersionOutput(version)) {
+    opencodeLogger.warn(
+      `${source} binary --version is not shuvcode (${resolvedPath}: ${version.trim()}). Ignoring it.`,
+    )
+    return false
+  }
+  if (version !== null) {
+    opencodeLogger.log(
+      `Resolved shuvcode binary from ${source}: ${resolvedPath} (${version.trim()})`,
+    )
+  } else {
+    opencodeLogger.log(`Resolved shuvcode binary from ${source}: ${resolvedPath}`)
+  }
+  return true
+}
+
+export function getShuvcodeCandidatePaths({
+  home,
+  platform = process.platform,
+}: {
+  home: string
+  platform?: NodeJS.Platform
+}): string[] {
+  if (platform === 'win32') {
+    return [
+      path.join(home, '.local', 'bin', `${SHUVCODE_BIN_NAME}.exe`),
+      path.join(home, '.bun', 'bin', `${SHUVCODE_BIN_NAME}.exe`),
+      path.join(home, 'AppData', 'Roaming', 'npm', `${SHUVCODE_BIN_NAME}.cmd`),
+    ]
+  }
+  return [
+    path.join(home, '.bun', 'bin', SHUVCODE_BIN_NAME),
+    path.join(home, '.local', 'bin', SHUVCODE_BIN_NAME),
+    path.join('/usr', 'local', 'bin', SHUVCODE_BIN_NAME),
+  ]
+}
+
+export function buildShuvcodeServeArgs({
+  port,
+}: {
+  port: number | string
+}): string[] {
+  // Issue #7: spawn only the v2-safe --port flag. --print-logs is unrecognized
+  // on v2 serve. --log-level is still a valid global flag (lowercase); we drop
+  // it here as a simplification so debugging can pass it manually.
+  return ['serve', '--port', String(port)]
+}
 
 let resolvedOpencodeCommand: string | null = null
 
@@ -505,60 +679,45 @@ export function resolveOpencodeCommand(): string {
     return resolvedOpencodeCommand
   }
 
-  const envPath = process.env.OPENCODE_PATH
-  if (envPath) {
+  const override = getShuvcodePathOverrideSource()
+  if (override) {
     const resolvedFromEnv = selectResolvedCommand({
-      output: envPath,
+      output: override.path,
       isWindows: process.platform === 'win32',
     })
-    if (resolvedFromEnv) {
+    if (
+      resolvedFromEnv &&
+      acceptResolvedShuvcodeOverride({
+        resolvedPath: resolvedFromEnv,
+        source: override.source,
+      })
+    ) {
       resolvedOpencodeCommand = resolvedFromEnv
       return resolvedFromEnv
     }
   }
 
-  for (const name of ['shuvcode', 'opencode'] as const) {
-    const resolved = tryWhichCommand(name)
-    if (resolved) {
-      resolvedOpencodeCommand = resolved
-      opencodeLogger.log(`Resolved opencode binary: ${resolved}`)
-      return resolved
-    }
+  const resolved = tryWhichCommand(SHUVCODE_BIN_NAME)
+  if (resolved) {
+    resolvedOpencodeCommand = resolved
+    opencodeLogger.log(`Resolved shuvcode binary: ${resolved}`)
+    return resolved
   }
 
   const home = process.env.HOME || process.env.USERPROFILE || ''
-  const extraPaths: string[] = [
-    path.join(home, '.bun', 'bin', 'shuvcode'),
-    path.join(home, '.local', 'bin', 'shuvcode'),
-    path.join('/usr', 'local', 'bin', 'shuvcode'),
-    path.join(home, '.bun', 'bin', 'opencode'),
-    path.join(home, '.local', 'bin', 'opencode'),
-    path.join(home, '.opencode', 'bin', 'opencode'),
-    path.join('/usr', 'local', 'bin', 'opencode'),
-    path.join('/opt', 'opencode', 'bin', 'opencode'),
-  ]
-  if (process.platform === 'win32') {
-    extraPaths.push(
-      path.join(home, '.local', 'bin', 'shuvcode.exe'),
-      path.join(home, '.bun', 'bin', 'shuvcode.exe'),
-      path.join(home, '.local', 'bin', 'opencode.exe'),
-      path.join(home, 'AppData', 'Local', 'opencode', 'opencode.exe'),
-      path.join(home, '.opencode', 'bin', 'opencode.exe'),
-    )
-  }
-  for (const extraPath of extraPaths) {
-    const resolved = tryExecutablePath(extraPath)
-    if (resolved) {
-      resolvedOpencodeCommand = resolved
-      opencodeLogger.log(`Resolved opencode binary: ${resolved}`)
-      return resolved
+  for (const extraPath of getShuvcodeCandidatePaths({ home })) {
+    const resolvedPath = tryExecutablePath(extraPath)
+    if (resolvedPath) {
+      resolvedOpencodeCommand = resolvedPath
+      opencodeLogger.log(`Resolved shuvcode binary: ${resolvedPath}`)
+      return resolvedPath
     }
   }
 
   opencodeLogger.warn(
-    'Could not resolve shuvcode/opencode path via which, falling back to "opencode"',
+    'Could not resolve shuvcode path via which, falling back to "shuvcode"',
   )
-  return 'opencode'
+  return SHUVCODE_BIN_NAME
 }
 async function getOpenPort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -603,15 +762,14 @@ async function waitForServer({
       await new Promise((resolve) => setTimeout(resolve, 100))
       continue
     }
-    if (response.status < 500) {
-      return true
+    if (!isReusableShuvcodeHealthResponse(response)) {
+      if (response.body.includes('BunInstallFailedError')) {
+        return new ServerStartError({ port, reason: response.body.slice(0, 200) })
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      continue
     }
-    const body = response.body
-    // Fatal errors that won't resolve with retrying
-    if (body.includes('BunInstallFailedError')) {
-      return new ServerStartError({ port, reason: body.slice(0, 200) })
-    }
-    await new Promise((resolve) => setTimeout(resolve, 100))
+    return true
   }
   return new ServerStartError({
     port,
@@ -648,41 +806,39 @@ function ensureOpencodeHomeDirectories({
  */
 async function discoverExistingServer(): Promise<SingleServer | null> {
   const lockPort = getLockPort()
-  try {
-    const portResponse = await requestHealthcheck({
-      url: `http://127.0.0.1:${lockPort}/kimaki/opencode-port`,
-      timeoutMs: 2000,
-    })
-    if (portResponse.status !== 200) {
-      return null
-    }
-    const parsed = JSON.parse(portResponse.body)
-    const port = parsed?.port
-    if (typeof port !== 'number') {
-      return null
-    }
+  const handoff = await resolveShuvcodeServerHandoff({
+    lockPort,
+    dataDir: getDataDir(),
+  })
+  if (handoff instanceof Error) return null
 
-    // Verify the OpenCode server is actually healthy
-    const healthResponse = await requestHealthcheck({
-      url: `http://127.0.0.1:${port}/api/health`,
-      timeoutMs: 2000,
-    })
-    if (healthResponse.status >= 500) {
-      return null
-    }
+  applyShuvcodeServerAuth({ auth: handoff.auth })
 
-    opencodeLogger.log(
-      `Discovered existing OpenCode server on port ${port} via hrana lock port ${lockPort}`,
+  const healthResponse = await requestHealthcheck({
+    url: `http://127.0.0.1:${handoff.port}/api/health`,
+    timeoutMs: 2000,
+  }).catch((e) => new FetchError({ url: `http://127.0.0.1:${handoff.port}/api/health`, cause: e }))
+  if (healthResponse instanceof Error) return null
+  if (!isReusableShuvcodeHealthResponse(healthResponse)) return null
+
+  const persisted = persistShuvcodeServerAuth({
+    dataDir: getDataDir(),
+    auth: handoff.auth,
+  })
+  if (persisted instanceof Error) {
+    opencodeLogger.warn(
+      `Could not persist discovered shuvcode server password: ${persisted.message}`,
     )
-    return {
-      process: null,
-      port,
-      baseUrl: `http://127.0.0.1:${port}`,
-      discovered: true,
-    }
-  } catch {
-    // Connection refused or other network error — no bot running
-    return null
+  }
+
+  opencodeLogger.log(
+    `Discovered existing shuvcode server on port ${handoff.port} via hrana lock port ${lockPort}`,
+  )
+  return {
+    process: null,
+    port: handoff.port,
+    baseUrl: buildShuvcodeSdkBaseUrl({ port: handoff.port }),
+    discovered: true,
   }
 }
 
@@ -732,15 +888,9 @@ async function startSingleServer({
   ensureProcessCleanupHandlersRegistered()
 
   const port = await getOpenPort()
+  ensureShuvcodeServerPassword()
 
-  const serveArgs = [
-    'serve',
-    '--port',
-    port.toString(),
-    '--print-logs',
-    '--log-level',
-    'WARN',
-  ]
+  const serveArgs = buildShuvcodeServeArgs({ port })
 
   const {
     command: spawnCommand,
@@ -1089,7 +1239,7 @@ async function startSingleServer({
   const server: SingleServer = {
     process: serverProcess,
     port,
-    baseUrl: `http://127.0.0.1:${port}`,
+    baseUrl: buildShuvcodeSdkBaseUrl({ port }),
   }
   if (startingServerProcess === serverProcess) {
     startingServerProcess = null
@@ -1111,16 +1261,10 @@ function getOrCreateClient({
     return cached
   }
 
-  const fetchWithTimeout = (request: Request) =>
-    fetch(request, {
-      // @ts-ignore
-      timeout: false,
-    })
-
   const client = createOpencodeClient({
     baseUrl,
     directory,
-    fetch: fetchWithTimeout as typeof fetch,
+    fetch: createShuvcodeSdkFetch(),
     headers: getOpencodeServerAuthHeaders(),
   })
   clientCache.set(directory, client)

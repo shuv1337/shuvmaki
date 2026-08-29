@@ -1,4 +1,4 @@
-// /session-id command - Show current session ID and an opencode attach command.
+// /session-id command - Show current session ID and a kimaki attach command.
 
 import {
   ChannelType,
@@ -16,15 +16,37 @@ import {
   getOpencodeServerPort,
   initializeOpencodeForDirectory,
 } from '../opencode.js'
+import { getDataDir } from '../config.js'
+import {
+  attachCommandHasUnescapableCmdPercent,
+  buildKimakiAttachCommand,
+} from '../shuvcode-server-auth.js'
 import { createLogger, LogPrefix } from '../logger.js'
 
 const logger = createLogger(LogPrefix.SESSION)
 
-function shellQuote(value: string): string {
-  if (!value) {
-    return "''"
+export function buildSessionIdAttachReply({
+  sessionId,
+  directory,
+  dataDir,
+  platform,
+}: {
+  sessionId: string
+  directory: string
+  dataDir?: string
+  platform?: NodeJS.Platform
+}) {
+  const attachCommand = buildKimakiAttachCommand({
+    sessionId,
+    directory,
+    dataDir,
+    platform,
+  })
+  const reply = `**Session ID:** \`${sessionId}\`\n**Attach command:**\n\`\`\`bash\n${attachCommand}\n\`\`\``
+  if (attachCommandHasUnescapableCmdPercent({ directory, dataDir, platform })) {
+    return `${reply}\nThis path contains \`%\`. Run the command in PowerShell. cmd.exe expands \`%VAR%\` and cannot escape percents.`
   }
-  return `'${value.replaceAll("'", `'"'"'`)}'`
+  return reply
 }
 
 export async function handleSessionIdCommand({
@@ -85,7 +107,7 @@ export async function handleSessionIdCommand({
     const getClient = await initializeOpencodeForDirectory(projectDirectory)
     if (getClient instanceof Error) {
       await command.editReply({
-        content: `Session ID: \`${sessionId}\`\nFailed to resolve OpenCode server port: ${getClient.message}`,
+        content: `Session ID: \`${sessionId}\`\nFailed to resolve shuvcode server port: ${getClient.message}`,
       })
       return
     }
@@ -94,16 +116,17 @@ export async function handleSessionIdCommand({
 
   if (!port) {
     await command.editReply({
-      content: `Session ID: \`${sessionId}\`\nCould not determine OpenCode server port`,
+      content: `Session ID: \`${sessionId}\`\nCould not determine shuvcode server port`,
     })
     return
   }
 
-  const attachUrl = `http://127.0.0.1:${port}`
-  const attachCommand = `opencode attach ${attachUrl} --session ${sessionId} --dir ${shellQuote(workingDirectory)}`
-
   await command.editReply({
-    content: `**Session ID:** \`${sessionId}\`\n**Attach command:**\n\`\`\`bash\n${attachCommand}\n\`\`\``,
+    content: buildSessionIdAttachReply({
+      sessionId,
+      directory: workingDirectory,
+      dataDir: getDataDir(),
+    }),
   })
   logger.log(`Session ID shown for thread ${channel.id}: ${sessionId}`)
 }

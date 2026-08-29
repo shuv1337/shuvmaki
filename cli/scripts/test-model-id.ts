@@ -10,8 +10,17 @@
  */
 
 import { createOpencodeClient } from '@opencode-ai/sdk/v2'
+import { randomBytes } from 'node:crypto'
 import { spawn } from 'node:child_process'
 import net from 'node:net'
+import {
+  buildShuvcodeServeArgs,
+  getOpencodeServerAuthHeaders,
+  resolveOpencodeCommand,
+} from '../src/opencode.js'
+import { buildShuvcodeSdkBaseUrl } from '../src/shuvcode-sdk-url.js'
+import { getSpawnCommandAndArgs } from '../src/opencode-command.js'
+import { applyShuvcodeServerAuth } from '../src/shuvcode-server-auth.js'
 
 async function getOpenPort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -32,10 +41,18 @@ async function getOpenPort(): Promise<number> {
 }
 
 async function waitForServer(port: number, maxAttempts = 30): Promise<boolean> {
+  const headers = getOpencodeServerAuthHeaders()
   for (let i = 0; i < maxAttempts; i++) {
     try {
-      const response = await fetch(`http://127.0.0.1:${port}/api/health`)
-      if (response.status < 500) {
+      const response = await fetch(`http://127.0.0.1:${port}/api/health`, {
+        headers,
+      })
+      const contentType = response.headers.get('content-type') || ''
+      if (
+        response.status >= 200 &&
+        response.status < 300 &&
+        contentType.toLowerCase().includes('application/json')
+      ) {
         return true
       }
     } catch {
@@ -55,23 +72,38 @@ async function main() {
   console.log(`Testing model IDs for directory: ${directory}`)
 
   const port = await getOpenPort()
-  console.log(`Starting opencode server on port ${port}...`)
+  console.log(`Starting shuvcode server on port ${port}...`)
 
-  const serverProcess = spawn(
-    'opencode',
-    ['serve', '--port', port.toString()],
-    {
-      cwd: directory,
-      stdio: 'pipe',
+  const password =
+    process.env.OPENCODE_PASSWORD ||
+    process.env.OPENCODE_SERVER_PASSWORD ||
+    randomBytes(16).toString('hex')
+  applyShuvcodeServerAuth({
+    auth: { username: 'opencode', password },
+  })
+
+  const { command, args, windowsVerbatimArguments } = getSpawnCommandAndArgs({
+    resolvedCommand: resolveOpencodeCommand(),
+    baseArgs: buildShuvcodeServeArgs({ port }),
+  })
+
+  const serverProcess = spawn(command, args, {
+    cwd: directory,
+    stdio: 'pipe',
+    windowsVerbatimArguments,
+    env: {
+      ...process.env,
+      OPENCODE_PASSWORD: password,
+      OPENCODE_SERVER_PASSWORD: password,
     },
-  )
+  })
 
   serverProcess.stdout?.on('data', (data) => {
-    console.log(`[opencode] ${data.toString().trim()}`)
+    console.log(`[shuvcode] ${data.toString().trim()}`)
   })
 
   serverProcess.stderr?.on('data', (data) => {
-    console.error(`[opencode] ${data.toString().trim()}`)
+    console.error(`[shuvcode] ${data.toString().trim()}`)
   })
 
   try {
@@ -79,12 +111,12 @@ async function main() {
     console.log('Server ready!')
 
     const client = createOpencodeClient({
-      baseUrl: `http://127.0.0.1:${port}`,
+      baseUrl: buildShuvcodeSdkBaseUrl({ port }),
+      directory,
+      headers: getOpencodeServerAuthHeaders(),
     })
 
-    const response = await client.provider.list({
-      query: { directory },
-    })
+    const response = await client.provider.list({ directory })
 
     if (!response.data) {
       throw new Error('Failed to fetch providers')

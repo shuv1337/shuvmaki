@@ -49,7 +49,7 @@ import {
 import * as orm from 'drizzle-orm'
 import * as dbSchema from './schema.js'
 import { selectResolvedCommand } from './opencode-command.js'
-import { resolveOpencodeCommand } from './opencode.js'
+import { looksLikeUpstreamOpencodeBinary, resolveOpencodeCommand } from './opencode.js'
 import {
   Events,
   ChannelType,
@@ -993,7 +993,7 @@ export async function ensureCommandAvailable({
   process.env[envPathKey] = installedPath
 }
 
-// Run opencode upgrade in the background so the user always has the latest version.
+// Run kimaki upgrade in the background so the user always has the latest version.
 
 // Spawn caffeinate on macOS to prevent system sleep while bot is running.
 // Uses -s to also prevent sleep on lid close (AC power only, not battery).
@@ -1637,37 +1637,42 @@ export async function run({
   const forceRestartOnboarding = Boolean(restartOnboarding)
   const forceGateway = Boolean(gateway)
 
-  // Prefer a resolved shuvcode/opencode binary so we skip installing upstream
-  // opencode when this fork's CLI is already available.
-  if (!process.env.OPENCODE_PATH) {
+  // Prefer a resolved shuvcode binary so we skip installing when it is
+  // already available. Upstream opencode is never used.
+  if (!process.env.SHUVCODE_PATH && !process.env.OPENCODE_PATH) {
     const resolved = resolveOpencodeCommand()
     if (path.isAbsolute(resolved)) {
+      process.env.SHUVCODE_PATH = resolved
       process.env.OPENCODE_PATH = resolved
+    }
+  } else if (process.env.SHUVCODE_PATH && !process.env.OPENCODE_PATH) {
+    process.env.OPENCODE_PATH = process.env.SHUVCODE_PATH
+  } else if (process.env.OPENCODE_PATH && !process.env.SHUVCODE_PATH) {
+    if (looksLikeUpstreamOpencodeBinary(process.env.OPENCODE_PATH)) {
+      cliLogger.warn(
+        `OPENCODE_PATH=${process.env.OPENCODE_PATH} is upstream opencode, not shuvcode. Ignoring it. Install shuvcode or set SHUVCODE_PATH.`,
+      )
+    } else {
+      process.env.SHUVCODE_PATH = process.env.OPENCODE_PATH
     }
   }
 
-  // Step 0: Ensure opencode and bun are installed
+  // Step 0: Ensure shuvcode and bun are installed
   await Promise.all([
     ensureCommandAvailable({
-      name: 'opencode',
-      envPathKey: 'OPENCODE_PATH',
-      installUnix: 'curl -fsSL https://opencode.ai/install | bash',
-      installWindows: 'irm https://opencode.ai/install.ps1 | iex',
+      name: 'shuvcode',
+      envPathKey: 'SHUVCODE_PATH',
+      installUnix: 'npm install -g shuvcode@latest',
+      installWindows: 'npm install -g shuvcode@latest',
       possiblePathsUnix: [
         '~/.bun/bin/shuvcode',
         '~/.local/bin/shuvcode',
         '/usr/local/bin/shuvcode',
-        '~/.local/bin/opencode',
-        '~/.opencode/bin/opencode',
-        '/usr/local/bin/opencode',
-        '/opt/opencode/bin/opencode',
       ],
       possiblePathsWindows: [
         '~\\.bun\\bin\\shuvcode.exe',
         '~\\.local\\bin\\shuvcode.exe',
-        '~\\.local\\bin\\opencode.exe',
-        '~\\AppData\\Local\\opencode\\opencode.exe',
-        '~\\.opencode\\bin\\opencode.exe',
+        '~\\AppData\\Roaming\\npm\\shuvcode.cmd',
       ],
     }),
     ensureCommandAvailable({
@@ -1679,6 +1684,10 @@ export async function run({
       possiblePathsWindows: ['~\\.bun\\bin\\bun.exe'],
     }),
   ])
+
+  if (process.env.SHUVCODE_PATH && !process.env.OPENCODE_PATH) {
+    process.env.OPENCODE_PATH = process.env.SHUVCODE_PATH
+  }
 
 
   if (store.getState().autoUpgradeEnabled) {

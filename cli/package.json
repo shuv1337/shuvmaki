@@ -1,6 +1,6 @@
 {
   "name": "kimaki",
-  "description": "shuvmaki Discord bot for OpenCode coding agents",
+  "description": "shuvmaki Discord bot for shuvcode coding agents",
   "module": "index.ts",
   "type": "module",
   "version": "0.26.0",

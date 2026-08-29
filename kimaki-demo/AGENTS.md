@@ -84,3 +84,5 @@ Only Tommy (Discord user ID `535922349652836367`) can authorize an `@everyone` o
 ## Deploying
 
 When deploying the demo server, always update the kimaki version in `Dockerfile` to the latest published version before running `fly deploy`. Check the latest version with `npm view kimaki version` and update the pinned version in the `RUN npm install -g kimaki@x.y.z` line.
+
+Do not fly deploy a shuvcode-only image while the kimaki pin is still a pre-cutover release (`0.23.1` spawns `opencode serve --print-logs`, which shuvcode v2 rejects). Keep the upstream opencode install in the Dockerfile until the pin and the installer change land in the same commit.

@@ -29,6 +29,7 @@ import { store } from './store.js'
 // top-level initialization values. The cycle could be broken by moving
 // the port into store.ts, but the current approach is simpler.
 import { getOpencodeServerPort } from './opencode.js'
+import { buildOpencodePortDiscoveryPayload } from './shuvcode-server-auth.js'
 
 const hranaLogger = createLogger(LogPrefix.DB)
 
@@ -180,9 +181,10 @@ export async function startHranaServer({
       res.end(JSON.stringify({ status: 'ok', pid: process.pid }))
       return
     }
-    // OpenCode server port discovery — no auth required (localhost only).
-    // CLI subcommands query this to reuse the bot's running OpenCode server
-    // instead of spawning a redundant second server process.
+    // OpenCode server port discovery only. Never include the serve password
+    // here: this listener binds to 0.0.0.0 when KIMAKI_INTERNET_REACHABLE_URL
+    // is set. Credential handoff is the 0600 data-dir file, not this HTTP
+    // route.
     if (pathname === '/kimaki/opencode-port') {
       const port = getOpencodeServerPort()
       if (port === null) {
@@ -191,7 +193,7 @@ export async function startHranaServer({
         return
       }
       res.writeHead(200, { 'content-type': 'application/json' })
-      res.end(JSON.stringify({ port }))
+      res.end(JSON.stringify(buildOpencodePortDiscoveryPayload({ port })))
       return
     }
     // Hrana routes: /v2, /v2/pipeline — require auth

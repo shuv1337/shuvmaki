@@ -16,12 +16,18 @@
 // a logging failure must never break plugin logic.
 
 import { createOpencodeClient, type OpencodeClient } from '@opencode-ai/sdk/v2'
+import { createShuvcodeSdkFetch, toShuvcodeSdkBaseUrl } from './shuvcode-sdk-url.js'
 
 // Inline auth header construction instead of importing from opencode.ts,
 // because opencode.ts pulls in the full server manager (spawn, store, etc.)
 // which is too heavy for plugin code running inside the opencode server process.
+//
+// Env-only by design. This file runs inside the shuvcode server process and
+// inherits OPENCODE_PASSWORD from the bot's spawn env. Do not read the
+// data-dir auth file here (that file is last-writer-wins across bots).
+// Bot-side clients use getShuvcodeServerAuthSnapshot (file first).
 function getAuthHeaders(): Record<string, string> {
-  const serverPassword = process.env.OPENCODE_SERVER_PASSWORD
+  const serverPassword = process.env.OPENCODE_SERVER_PASSWORD || process.env.OPENCODE_PASSWORD
   if (!serverPassword) return {}
   const username = process.env.OPENCODE_SERVER_USERNAME || 'opencode'
   return { Authorization: `Basic ${Buffer.from(`${username}:${serverPassword}`).toString('base64')}` }
@@ -35,9 +41,10 @@ export function createPluginClient({
   directory: string
 }): OpencodeClient {
   return createOpencodeClient({
-    baseUrl: serverUrl.toString().replace(/\/$/, ''),
+    baseUrl: toShuvcodeSdkBaseUrl(serverUrl.toString()),
     directory,
     headers: getAuthHeaders(),
+    fetch: createShuvcodeSdkFetch(),
   })
 }
 

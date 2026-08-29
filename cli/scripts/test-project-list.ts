@@ -1,10 +1,11 @@
 #!/usr/bin/env tsx
 import path from 'node:path'
 import { createOpencodeClient } from '@opencode-ai/sdk/v2'
+import { buildShuvcodeSdkBaseUrl } from '../src/shuvcode-sdk-url.js'
 
 async function testProjectList() {
   const port = process.env.OPENCODE_PORT || '3318'
-  const baseUrl = `http://127.0.0.1:${port}`
+  const baseUrl = buildShuvcodeSdkBaseUrl({ port })
 
   console.log(`Connecting to OpenCode server at ${baseUrl}...\n`)
 

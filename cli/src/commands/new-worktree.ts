@@ -18,7 +18,6 @@ import {
   setWorkspaceError,
   getChannelDirectory,
   getThreadSession,
-  getThreadWorktreeOrWorkspace,
   setThreadSession,
 } from '../database.js'
 import {
@@ -31,6 +30,7 @@ import {
 import { createLogger, LogPrefix } from '../logger.js'
 import { notifyError } from '../sentry.js'
 import {
+  createWorktreeWithSubmodules,
   execAsync,
   listBranchesByLastCommit,
   resolveBestBaseRef,
@@ -39,8 +39,10 @@ import {
 import { getOrCreateRuntime } from '../session-handler/thread-session-runtime.js'
 import {
   buildSessionPermissions,
+  extractSdkErrorMessage,
   initializeOpencodeForDirectory,
 } from '../opencode.js'
+import { assertShuvcodeSessionPermissionsTranslatable } from '../shuvcode-sdk-url.js'
 import { WORKTREE_PREFIX } from './merge-worktree.js'
 import type { AutocompleteContext } from './types.js'
 import * as errore from 'errore'
@@ -209,13 +211,10 @@ async function getProjectDirectoryFromChannel(
 }
 
 /**
- * Try creating a worktree via the OpenCode workspace SDK.
- * Returns the workspace directory on success, or an Error if the workspace
- * feature is not available or the creation fails. Callers fall back to the
- * direct git path on Error.
+ * Create a git worktree in the kimaki data dir.
+ * shuvcode v2 has no `/experimental/workspace` API, so this is the only path.
  */
 async function tryWorkspaceCreate({
-  threadId,
   worktreeName,
   projectDirectory,
   baseBranch,
@@ -224,26 +223,14 @@ async function tryWorkspaceCreate({
   worktreeName: string
   projectDirectory: string
   baseBranch?: string
-}): Promise<{ directory: string; workspaceId: string } | Error> {
-  const getClient = await initializeOpencodeForDirectory(projectDirectory)
-  if (getClient instanceof Error) return getClient
-
-  const client = getClient()
-  const response = await client.experimental.workspace.create({
+}): Promise<{ directory: string; workspaceId?: string } | Error> {
+  const result = await createWorktreeWithSubmodules({
     directory: projectDirectory,
-    type: 'kimaki-worktree',
-    branch: worktreeName,
-    extra: baseBranch ? { baseBranch } : null,
-  }).catch((e) => new OpenCodeSdkError({ operation: 'workspace.create', cause: e }))
-  if (response instanceof Error) return response
-  if (response.error) {
-    return new Error(`Workspace creation failed: ${JSON.stringify(response.error)}`)
-  }
-  const workspace = response.data
-  if (!workspace?.directory || !workspace.id) {
-    return new Error('Workspace SDK returned no directory or ID')
-  }
-  return { directory: workspace.directory, workspaceId: workspace.id }
+    name: worktreeName,
+    baseBranch,
+  })
+  if (result instanceof Error) return result
+  return { directory: result.directory }
 }
 
 /**
@@ -336,7 +323,7 @@ export async function createWorktreeInBackground({
       )
       await editChain
 
-      logger.log(`[WORKTREE] Created via workspace SDK: ${workspaceResult.directory}`)
+      logger.log(`[WORKTREE] Created via git worktree: ${workspaceResult.directory}`)
       return workspaceResult.directory
   })().catch((e) => {
     logger.error('[WORKTREE] Unexpected error in createWorktreeInBackground:', e)
@@ -491,10 +478,26 @@ export async function handleNewWorktreeCommand({
     projectDirectory,
     baseBranch,
     rest: command.client.rest,
-  }).catch((e) => {
-    logger.error('[NEW-WORKTREE] Background error:', e)
-    void notifyError(e, 'Background worktree creation failed')
   })
+    .then(async (worktreeDirectory) => {
+      if (worktreeDirectory instanceof Error) return
+      const isolationError = assertShuvcodeSessionPermissionsTranslatable(
+        buildSessionPermissions({
+          directory: worktreeDirectory,
+          originalRepoDirectory: projectDirectory,
+        }),
+      )
+      if (!isolationError) return
+      logger.error(
+        '[NEW-WORKTREE] Refusing to start an unisolated worktree session:',
+        isolationError,
+      )
+      await sendThreadMessage(thread, isolationError.message)
+    })
+    .catch((e) => {
+      logger.error('[NEW-WORKTREE] Background error:', e)
+      void notifyError(e, 'Background worktree creation failed')
+    })
 }
 
 /**
@@ -605,20 +608,29 @@ async function handleWorktreeInThread({
   })
     .then(async (result) => {
       if (result instanceof Error) return
+      const isolationError = assertShuvcodeSessionPermissionsTranslatable(
+        buildSessionPermissions({
+          directory: result,
+          originalRepoDirectory: projectDirectory,
+        }),
+      )
+      if (isolationError) {
+        logger.error(
+          '[NEW-WORKTREE] Refusing to bind an unisolated worktree session:',
+          isolationError,
+        )
+        await sendThreadMessage(
+          worktreeThread,
+          `Worktree is ready at \`${result}\`. ${isolationError.message}`,
+        )
+        return
+      }
+
       const sourceSessionId = await getThreadSession(thread.id)
       if (!sourceSessionId) {
         await sendThreadMessage(
           worktreeThread,
           'Worktree is ready. Send a message here to start a fresh session in this checkout.',
-        )
-        return
-      }
-
-      const workspace = await getThreadWorktreeOrWorkspace(worktreeThread.id)
-      if (!workspace?.workspace_id) {
-        await sendThreadMessage(
-          worktreeThread,
-          '✗ Worktree is ready, but OpenCode returned no workspace ID for context reuse.',
         )
         return
       }
@@ -638,7 +650,6 @@ async function handleWorktreeInThread({
       const forkResponse = await getClient().session.fork({
         sessionID: sourceSessionId,
         directory: result,
-        workspace: workspace.workspace_id,
       }).catch((e) => new OpenCodeSdkError({ operation: 'session.fork', cause: e }))
       if (forkResponse instanceof Error) {
         logger.error('[NEW-WORKTREE] Failed to fork session into worktree:', forkResponse)
@@ -646,6 +657,17 @@ async function handleWorktreeInThread({
         await sendThreadMessage(
           worktreeThread,
           `✗ Worktree is ready, but failed to reuse session context there: ${forkResponse.message}`,
+        )
+        return
+      }
+
+      if (forkResponse.error) {
+        const error = new Error(extractSdkErrorMessage(forkResponse.error))
+        logger.error('[NEW-WORKTREE] Failed to fork session into worktree:', error)
+        void notifyError(error, 'Failed to fork session into worktree')
+        await sendThreadMessage(
+          worktreeThread,
+          `✗ Worktree is ready, but failed to reuse session context there: ${error.message}`,
         )
         return
       }
@@ -670,27 +692,6 @@ async function handleWorktreeInThread({
         getClient,
         directory: projectDirectory,
       })
-
-      const permissionResponse = await getClient().session.update({
-        sessionID: forkedSession.id,
-        directory: result,
-        permission: buildSessionPermissions({
-          directory: result,
-          originalRepoDirectory: projectDirectory,
-        }),
-      }).catch((e) => new OpenCodeSdkError({ operation: 'session.update', cause: e }))
-      if (permissionResponse instanceof Error || permissionResponse.error) {
-        const error = permissionResponse instanceof Error
-          ? permissionResponse
-          : new Error('OpenCode rejected forked session permission update')
-        logger.error('[NEW-WORKTREE] Failed to update forked session permissions:', error)
-        void notifyError(error, 'Failed to update forked session permissions')
-        await sendThreadMessage(
-          worktreeThread,
-          `✗ Worktree is ready, but failed to update forked session permissions: ${error.message}`,
-        )
-        return
-      }
 
       await setThreadSession(worktreeThread.id, forkedSession.id)
       getOrCreateRuntime({

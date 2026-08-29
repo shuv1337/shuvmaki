@@ -49,15 +49,14 @@ FROM node:24-slim
 RUN apt-get update && apt-get install -y git curl unzip \
   && rm -rf /var/lib/apt/lists/*
 
-# bun is required by OpenCode
+# bun is required by shuvcode
 RUN curl -fsSL https://bun.sh/install | bash
 ENV PATH="/root/.bun/bin:$PATH"
 
 RUN npm install -g kimaki@latest
 
-# Pre-install OpenCode so the first session does not hit GitHub rate limits
-RUN curl -fsSL https://opencode.ai/install | bash
-ENV PATH="/root/.opencode/bin:$PATH"
+# Pre-install shuvcode (OpenCode v2 fork) so first sessions do not fetch it at runtime
+RUN npm install -g shuvcode@latest
 
 RUN mkdir -p /data/projects
 WORKDIR /data
@@ -72,7 +71,7 @@ CMD ["kimaki", "--gateway", "--data-dir", "/data", \
 
 <Aside>
 <Note>
-**git** is required. OpenCode uses it for worktrees, diffs, and project detection. Without it, sessions fail in confusing ways.
+**git** is required. shuvcode uses it for worktrees, diffs, and project detection. Without it, sessions fail in confusing ways.
 </Note>
 </Aside>
 

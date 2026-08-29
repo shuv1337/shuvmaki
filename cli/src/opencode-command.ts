@@ -43,11 +43,16 @@ export function selectResolvedCommand({
   return cmdShim || lines[0] || null
 }
 
-function quoteWindowsCommandSegment(value: string): string {
-  if (!/[\s"]/u.test(value)) {
-    return value
-  }
-  return `"${value.replaceAll('"', '\\"')}"`
+export function quoteWindowsCommandSegment(value: string): string {
+  // Quote for `cmd.exe /c` (npm .cmd shims). Always quote; escape `"` as `""`.
+  // Do not double `%`: that only works inside .bat files. On the cmd command
+  // line, `%%VAR%%` still expands `%VAR%` and `foo%%bar` keeps two percents.
+  // Percent expansion cannot be escaped on the cmd command line at all.
+  return `"${value.replaceAll('"', '""')}"`
+}
+
+export function windowsCmdSegmentHasPercent(value: string): boolean {
+  return value.includes('%')
 }
 
 export function getSpawnCommandAndArgs({

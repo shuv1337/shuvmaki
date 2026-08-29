@@ -1,6 +1,6 @@
 #!/bin/bash
 # Example runner for the system-prompt drift plugin.
-# Starts one local opencode server with the example plugins, sends two prompts
+# Starts one local shuvcode server with the example plugins, sends two prompts
 # into the same session, and prints the second run output where the
 # tui.toast.show event should appear.
 
@@ -12,10 +12,12 @@ cd "$SCRIPT_DIR"
 PORT="${PORT:-4097}"
 MODEL="${MODEL:-opencode/kimi-k2.5}"
 TMP_DIR="$SCRIPT_DIR/tmp"
-SERVER_LOG="$TMP_DIR/opencode-serve.log"
+SERVER_LOG="$TMP_DIR/shuvcode-serve.log"
 RUN1_JSONL="$TMP_DIR/run-1.jsonl"
 RUN2_OUTPUT="$TMP_DIR/run-2-output.txt"
 KIMAKI_DATA_DIR="$TMP_DIR/kimaki-data"
+OPENCODE_PASSWORD="${OPENCODE_PASSWORD:-$(openssl rand -hex 24)}"
+OPENCODE_SERVER_PASSWORD="$OPENCODE_PASSWORD"
 
 rm -rf "$TMP_DIR"
 mkdir -p "$TMP_DIR" "$KIMAKI_DATA_DIR"
@@ -33,22 +35,22 @@ cleanup() {
 
 trap cleanup EXIT
 
-echo "Starting opencode serve on port $PORT"
+echo "Starting shuvcode serve on port $PORT"
 echo "Model: $MODEL"
 echo "Working directory: $SCRIPT_DIR"
 echo "Kimaki data dir: $KIMAKI_DATA_DIR"
 echo ""
 
-KIMAKI_DATA_DIR="$KIMAKI_DATA_DIR" \
-  opencode serve --port "$PORT" --print-logs >"$SERVER_LOG" 2>&1 &
+export OPENCODE_PASSWORD OPENCODE_SERVER_PASSWORD KIMAKI_DATA_DIR
+
+shuvcode serve --port "$PORT" >"$SERVER_LOG" 2>&1 &
 SERVER_PID="$!"
 
 sleep 2
 
 echo "First turn: establish baseline system prompt"
-opencode run \
-  --attach "http://127.0.0.1:$PORT" \
-  --dir "$SCRIPT_DIR" \
+shuvcode run \
+  --server "http://127.0.0.1:$PORT" \
   --model "$MODEL" \
   --format json \
   "Reply with only the word baseline." | tee "$RUN1_JSONL"
@@ -82,13 +84,11 @@ fi
 
 echo ""
 echo "Second turn: mutate system prompt and continue session $SESSION_ID"
-opencode run \
-  --attach "http://127.0.0.1:$PORT" \
-  --dir "$SCRIPT_DIR" \
+shuvcode run \
+  --server "http://127.0.0.1:$PORT" \
   --session "$SESSION_ID" \
   --model "$MODEL" \
   --format json \
-  --print-logs \
   "Reply with only the word changed." 2>&1 | tee "$RUN2_OUTPUT"
 
 echo ""

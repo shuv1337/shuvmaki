@@ -21,7 +21,13 @@ import type { ThreadStartMarker } from '../system-message.js'
 import { buildOpencodeEventLogLine } from '../session-handler/opencode-session-event-log.js'
 import { createDiscordRest } from '../discord-urls.js'
 import { archiveThread, uploadFilesToDiscord, stripMentions } from '../discord-utils.js'
-import { setDataDir, setProjectsDir, getDataDir, getProjectsDir } from '../config.js'
+import { setDataDir, setProjectsDir, getDataDir, getLockPort, getProjectsDir } from '../config.js'
+import { resolveOpencodeCommand } from '../opencode.js'
+import {
+  applyShuvcodeServerAuth,
+  buildKimakiAttachSpawn,
+  resolveShuvcodeServerHandoff,
+} from '../shuvcode-server-auth.js'
 import { execAsync, validateWorktreeDirectory } from '../worktrees.js'
 import { upgrade, getCurrentVersion } from '../upgrade.js'
 import { getPromptPreview, parseSendAtValue, parseScheduledTaskPayload, serializeScheduledTaskPayload, type ScheduledTaskPayload } from '../task-schedule.js'
@@ -41,6 +47,52 @@ import {
 
 const cliLogger = createLogger(LogPrefix.CLI)
 const cli = goke()
+
+cli
+  .command('attach', 'Attach a local shuvcode TUI to a running shuvmaki session')
+  .option('--session <sessionId>', 'Session ID to attach to')
+  .option('--dir <path>', 'Project directory (defaults to cwd)')
+  .option('--data-dir <path>', 'Data directory (default: ~/.kimaki)')
+  .action(async (options) => {
+    if (options.dataDir) {
+      setDataDir(options.dataDir)
+    }
+    if (!options.session) {
+      cliLogger.error('Session ID is required. Use --session <sessionId>')
+      process.exit(EXIT_NO_RESTART)
+    }
+    const directory = path.resolve(options.dir || process.cwd())
+    const handoff = await resolveShuvcodeServerHandoff({
+      lockPort: getLockPort(),
+      dataDir: getDataDir(),
+    })
+    if (handoff instanceof Error) {
+      cliLogger.error(handoff.message)
+      process.exit(EXIT_NO_RESTART)
+    }
+    applyShuvcodeServerAuth({ auth: handoff.auth })
+    const { command, args, windowsVerbatimArguments, env, cwd } = buildKimakiAttachSpawn({
+      resolvedCommand: resolveOpencodeCommand(),
+      serverUrl: `http://127.0.0.1:${handoff.port}`,
+      sessionId: options.session,
+      directory,
+      auth: handoff.auth,
+    })
+    const child = spawn(command, args, {
+      stdio: 'inherit',
+      cwd,
+      env,
+      windowsVerbatimArguments,
+    })
+    const exitCode = await new Promise<number>((resolve) => {
+      child.on('error', (cause) => {
+        cliLogger.error('Failed to start shuvcode:', cause)
+        resolve(EXIT_NO_RESTART)
+      })
+      child.on('exit', (code) => resolve(code ?? 1))
+    })
+    process.exit(exitCode)
+  })
 
 async function resolveSessionDirectoryFromDatabase({
   sessionId,

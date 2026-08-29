@@ -113,9 +113,21 @@ use `--gateway` to force gateway mode even if self-hosted credentials are alread
 
 `db` is a devDependency of `cli`. this means cli can only import **types** from `db`, not runtime values. use `import type { ... } from 'db/...'` in cli code. website has `db` as a normal dependency so it can import runtime values (functions, classes, etc.).
 
+## shuvcode
+
+this project is a **hard cutover** to [Latitudes-Dev/shuvcode](https://github.com/Latitudes-Dev/shuvcode) (OpenCode v2). never install, spawn, or fall back to upstream `opencode`.
+
+- the CLI binary is `shuvcode`. install with `npm install -g shuvcode@latest`.
+- resolve it via `SHUVCODE_PATH` / `OPENCODE_PATH`, then `which shuvcode`, then common shuvcode install paths. do not probe `opencode`. if `OPENCODE_PATH` points at upstream opencode, ignore it and log which env var supplied the override. a resolved override must identify as shuvcode (`--version` contains `shuvcode`).
+- spawn `shuvcode serve --port <n>` only. do not pass `--print-logs` (unrecognized on v2 serve). `--log-level` is still a valid global flag (lowercase choices); we drop it from the default serve argv as a simplification, not because it is unrecognized.
+- shuvcode serve always requires a password. set `OPENCODE_PASSWORD` / `OPENCODE_SERVER_PASSWORD` (or let `ensureShuvcodeServerPassword()` generate one) and send Basic auth (`opencode:<password>`) on health checks and SDK clients.
+- persist the generated password to `<dataDir>/shuvcode-server-auth.json` (0600). `/kimaki/opencode-port` returns only `{ port }` — never the password — because that listener binds to `0.0.0.0` when `KIMAKI_INTERNET_REACHABLE_URL` is set. cross-process discovery prefers that data-dir file over `OPENCODE_PASSWORD` in the environment, and only persists after a successful authenticated health check. never treat a 401 health response as a reusable server. two bots must never share a data dir (last writer wins). plugin-opencode-client.ts stays env-only because it inherits the spawn env; do not unify that with file-first bot clients.
+- user-facing attach is `kimaki attach --session <id> --dir <dir>`. do not put the serve password in Discord. MCP auth prompts should say `shuvcode`, not `opencode`.
+- if I ask you questions about shuvcode or opencode internals, opensrc `Latitudes-Dev/shuvcode`. do not use anomalyco/opencode as the source of truth.
+
 ## opencode SDK
 
-always import from `@opencode-ai/sdk/v2`, never from `@opencode-ai/sdk` (v1). the v2 SDK uses flat parameters instead of nested `path`/`query`/`body` objects. for example:
+the HTTP client still imports from `@opencode-ai/sdk/v2` (the published 1.x package's flat v2 API). never import from `@opencode-ai/sdk` (v1 nested params). shuvcode v2 mounts routes under `/api/*` while the SDK emits unprefixed paths (`/session`, `/event`), so every SDK `baseUrl` must be `http://127.0.0.1:<port>/api` via `toShuvcodeSdkBaseUrl` / `buildShuvcodeSdkBaseUrl`. `createShuvcodeSdkFetch()` rewrites `POST /session` bodies to `{ title, location }`, maps `prompt_async` → `prompt` and `abort` → `interrupt`, copies `system`/`model`/`variant`/`noReply` into prompt metadata, applies model/agent/system via `/model`, `/agent`, and `instructions/entries/kimaki-system` before the prompt, unwraps `{ data }` JSON, and translates shuvcode v2 SSE events into `message.updated` / `message.part.updated` / `session.status` / `session.idle`. health checks must require `application/json` — SPA `text/html` 200s are not healthy. subscribe to events with `client.event.subscribe` (`/api/event`); `/global/event` does not exist. the demo image still installs upstream opencode while `kimaki@0.23.1` is pinned; drop that installer only when the pin moves to a shuvcode-aware release in the same commit. the v2 SDK uses flat parameters instead of nested `path`/`query`/`body` objects. for example:
 
 - `session.get({ sessionID: id })` not `session.get({ path: { id } })`
 - `session.messages({ sessionID: id, directory })` not `session.messages({ path: { id }, query: { directory } })`
@@ -293,10 +305,6 @@ errore is a submodule. should always be in main. make sure it is never in detach
 it is a package for using errors as values in ts.
 
 this whole codebase uses errore.org conventions. ALWAYS read the errore skill before editing any code.
-
-## opencode
-
-if I ask you questions about opencode you can opensrc it from anomalyco/opencode
 
 ## discord bot messages
 
@@ -545,7 +553,7 @@ see `docs/e2e-testing-learnings.md` for detailed lessons. key points:
 
 ## event handler architecture
 
-our event handler should follow closely what opencode tui does. you can find opencode source code in opensrc folder. opensrc anomalyco/opencode. notice opencode-ai/opencode is a different unrelated repo. ignore that
+our event handler should follow closely what the shuvcode/opencode tui does. you can find the source in opensrc folder. opensrc Latitudes-Dev/shuvcode. do not use anomalyco/opencode or opencode-ai/opencode as the source of truth.
 
 see `packages/app/src/components/prompt-input/submit.ts` for where opencode tui calls promptAsync
 

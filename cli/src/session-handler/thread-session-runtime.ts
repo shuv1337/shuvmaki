@@ -29,6 +29,7 @@ import {
   writeInjectionGuardConfig,
   extractSdkErrorMessage,
 } from '../opencode.js'
+import { assertShuvcodeSessionPermissionsTranslatable } from '../shuvcode-sdk-url.js'
 import { isAbortError } from '../utils.js'
 import {
   registerEventListener,
@@ -4244,7 +4245,6 @@ export class ThreadSessionRuntime {
   // Creates or reuses the OpenCode session for this thread.
 
   private async updateExistingSessionPermissions({
-    client,
     sessionId,
     createdNewSession,
     permissions,
@@ -4253,7 +4253,7 @@ export class ThreadSessionRuntime {
     sessionId: string
     createdNewSession: boolean
     permissions?: string[]
-  }) {
+  }): Promise<Error | null> {
     if (createdNewSession) {
       return null
     }
@@ -4263,14 +4263,11 @@ export class ThreadSessionRuntime {
       return null
     }
 
-    const updateResult = await client.session.update({
-      sessionID: sessionId,
-      permission: rules,
-    }).catch((e) => new OpenCodeSdkError({ operation: 'session.update', cause: e }))
-    if (updateResult instanceof Error) return updateResult
-    if (updateResult.error) {
-      return new Error('OpenCode rejected permission update')
-    }
+    // shuvcode v2 has no session.update/policy PATCH. Isolation and
+    // --permission allow-lists must be applied at session.create.
+    logger.warn(
+      `[ENSURE SESSION] Skipping session.update permission rules for ${sessionId}; shuvcode only accepts policy at create time`,
+    )
     return null
   }
 
@@ -4356,6 +4353,12 @@ export class ThreadSessionRuntime {
         }),
         ...parsePermissionRules(permissions ?? []),
       ]
+      const permissionError =
+        assertShuvcodeSessionPermissionsTranslatable(sessionPermissions)
+      if (permissionError) {
+        logger.error(`[ENSURE SESSION] ${permissionError.message}`)
+        return permissionError
+      }
       // Omit title so OpenCode auto-generates a summary from the conversation
       const createResult = await getClient().session.create({
         directory: this.sdkDirectory,

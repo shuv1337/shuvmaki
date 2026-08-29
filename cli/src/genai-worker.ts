@@ -292,7 +292,7 @@ parentPort.on('message', async (message: WorkerInMessage) => {
 
         // Start GenAI session
         session = await startGenAiSession({
-          tools,
+          tools: tools.tools,
           systemMessage: message.systemMessage,
           geminiApiKey: message.geminiApiKey,
           onAssistantAudioChunk({ data }) {

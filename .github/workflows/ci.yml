@@ -26,14 +26,11 @@ jobs:
           node-version: 22
           cache: pnpm
 
-      - name: Install opencode CLI
-        run: curl -fsSL https://opencode.ai/install | bash
+      - name: Install shuvcode CLI
+        run: npm install -g shuvcode@latest
 
-      - name: Add opencode to PATH
-        run: echo "$HOME/.opencode/bin" >> $GITHUB_PATH
-
-      - name: Verify opencode
-        run: opencode --version
+      - name: Verify shuvcode
+        run: shuvcode --version
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile

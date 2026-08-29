@@ -1,18 +1,20 @@
 // Global SSE event listener.
-// One persistent connection to /global/event that broadcasts events to all
+// One persistent connection to /event (SDK path) that broadcasts events to all
 // registered thread runtimes. Each runtime's handleEvent() filters by
 // sessionId internally. Replaces per-thread SSE listeners that each opened
 // their own connection, causing reconnect churn with many idle threads.
 //
-// Architecture mirrors the opencode TUI (packages/app/src/context/global-sdk.tsx)
-// which uses a single global.event() SSE stream for all directories.
+// shuvcode v2 exposes SSE at /api/event. The SDK client is pointed at the
+// /api origin, then event.subscribe() appends /event. /global/event does not
+// exist on shuvcode v2.
 
-import type { Event as OpenCodeEvent, GlobalEvent } from '@opencode-ai/sdk/v2'
+import type { Event as OpenCodeEvent } from '@opencode-ai/sdk/v2'
 import { createOpencodeClient, type OpencodeClient } from '@opencode-ai/sdk/v2'
 
 import { OpenCodeSdkError } from '../errors.js'
 import { createLogger, LogPrefix } from '../logger.js'
 import { getOpencodeServerAuthHeaders } from '../opencode.js'
+import { createShuvcodeSdkFetch } from '../shuvcode-sdk-url.js'
 
 const logger = createLogger(LogPrefix.SESSION)
 
@@ -154,13 +156,16 @@ async function resolveBaseUrlGetter(): Promise<() => string | null> {
 }
 
 function createGlobalClient(baseUrl: string): OpencodeClient {
-  return createOpencodeClient({ baseUrl, headers: getOpencodeServerAuthHeaders() })
+  return createOpencodeClient({
+    baseUrl,
+    headers: getOpencodeServerAuthHeaders(),
+    fetch: createShuvcodeSdkFetch(),
+  })
 }
 
-function dispatchEvent(globalEvent: GlobalEvent): void {
-  const payload = globalEvent.payload as OpenCodeEvent
+function dispatchEvent(event: OpenCodeEvent): void {
   for (const callback of callbacks.values()) {
-    callback(payload)
+    callback(event)
   }
 }
 
@@ -191,7 +196,7 @@ async function runEventLoop(): Promise<void> {
 
     const client = createGlobalClient(baseUrl)
 
-    const subscribeResult = await client.global.event({ signal })
+    const subscribeResult = await client.event.subscribe({}, { signal })
       .catch((e) => new OpenCodeSdkError({ operation: 'event.subscribe', cause: e }))
 
     if (subscribeResult instanceof Error) {

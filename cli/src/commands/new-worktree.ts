@@ -41,6 +41,7 @@ import {
   buildSessionPermissions,
   initializeOpencodeForDirectory,
 } from '../opencode.js'
+import { assertShuvcodeSessionPermissionsTranslatable } from '../shuvcode-sdk-url.js'
 import { WORKTREE_PREFIX } from './merge-worktree.js'
 import type { AutocompleteContext } from './types.js'
 import * as errore from 'errore'
@@ -476,10 +477,26 @@ export async function handleNewWorktreeCommand({
     projectDirectory,
     baseBranch,
     rest: command.client.rest,
-  }).catch((e) => {
-    logger.error('[NEW-WORKTREE] Background error:', e)
-    void notifyError(e, 'Background worktree creation failed')
   })
+    .then(async (worktreeDirectory) => {
+      if (worktreeDirectory instanceof Error) return
+      const isolationError = assertShuvcodeSessionPermissionsTranslatable(
+        buildSessionPermissions({
+          directory: worktreeDirectory,
+          originalRepoDirectory: projectDirectory,
+        }),
+      )
+      if (!isolationError) return
+      logger.error(
+        '[NEW-WORKTREE] Refusing to start an unisolated worktree session:',
+        isolationError,
+      )
+      await sendThreadMessage(thread, isolationError.message)
+    })
+    .catch((e) => {
+      logger.error('[NEW-WORKTREE] Background error:', e)
+      void notifyError(e, 'Background worktree creation failed')
+    })
 }
 
 /**
@@ -590,6 +607,24 @@ async function handleWorktreeInThread({
   })
     .then(async (result) => {
       if (result instanceof Error) return
+      const isolationError = assertShuvcodeSessionPermissionsTranslatable(
+        buildSessionPermissions({
+          directory: result,
+          originalRepoDirectory: projectDirectory,
+        }),
+      )
+      if (isolationError) {
+        logger.error(
+          '[NEW-WORKTREE] Refusing to bind an unisolated worktree session:',
+          isolationError,
+        )
+        await sendThreadMessage(
+          worktreeThread,
+          `Worktree is ready at \`${result}\`. ${isolationError.message}`,
+        )
+        return
+      }
+
       const sourceSessionId = await getThreadSession(thread.id)
       if (!sourceSessionId) {
         await sendThreadMessage(
@@ -646,16 +681,6 @@ async function handleWorktreeInThread({
         directory: projectDirectory,
       })
 
-      const isolationRules = buildSessionPermissions({
-        directory: result,
-        originalRepoDirectory: projectDirectory,
-      })
-      if (isolationRules.length > 0) {
-        logger.warn(
-          '[NEW-WORKTREE] Skipping forked session permission update; shuvcode has no session.update policy route',
-        )
-      }
-
       await setThreadSession(worktreeThread.id, forkedSession.id)
       getOrCreateRuntime({
         threadId: worktreeThread.id,
@@ -667,9 +692,7 @@ async function handleWorktreeInThread({
       })
       await sendThreadMessage(
         worktreeThread,
-        isolationRules.length > 0
-          ? `Reusing context from <#${thread.id}> in worktree session \`${forkedSession.id}\`. Origin-checkout isolation is not available on shuvcode; the session runs in this worktree directory.`
-          : `Reusing context from <#${thread.id}> in worktree session \`${forkedSession.id}\`.`,
+        `Reusing context from <#${thread.id}> in worktree session \`${forkedSession.id}\`.`,
       )
     })
     .catch((e) => {

@@ -9,6 +9,8 @@ import {
   translateShuvcodeEvent,
 } from './shuvcode-event-adapter.js'
 import {
+  assertShuvcodeSessionPermissionsTranslatable,
+  fetchShuvcodeSdk,
   mapShuvcodeProviderList,
   mapShuvcodeRevertResponse,
   mapShuvcodeSessionMessages,
@@ -19,8 +21,11 @@ import {
   splitShuvcodeSessionPermissionRules,
 } from './shuvcode-sdk-url.js'
 
+const originalFetch = globalThis.fetch
+
 afterEach(() => {
   resetShuvcodeAdapterState()
+  globalThis.fetch = originalFetch
 })
 
 describe('shuvcode session policy', () => {
@@ -56,6 +61,21 @@ describe('shuvcode session policy', () => {
       location: { directory: '/tmp/wt' },
       policy: { tools: { allow: ['bash'] } },
     })
+  })
+
+  test('refuses to start a session when required rules are untranslatable', () => {
+    const error = assertShuvcodeSessionPermissionsTranslatable([
+      { permission: 'external_directory', action: 'deny', pattern: '/repo' },
+      { permission: 'bash', action: 'allow', pattern: '*' },
+    ])
+    expect(error).toBeInstanceOf(Error)
+    expect(error?.message).toContain('external_directory:/repo:deny')
+    expect(error?.message).toContain('Refusing to run with weaker isolation')
+    expect(
+      assertShuvcodeSessionPermissionsTranslatable([
+        { permission: 'bash', action: 'allow', pattern: '*' },
+      ]),
+    ).toBeUndefined()
   })
 
   test('fails closed when session.create includes untranslatable rules', async () => {
@@ -178,7 +198,16 @@ describe('shuvcode prompt and route rewrite', () => {
     rememberShuvcodeForm({
       formID: 'form_1',
       sessionID: 'ses_1',
-      fields: [{ key: 'choice', type: 'string' }],
+      fields: [
+        {
+          key: 'choice',
+          type: 'string',
+          options: [
+            { label: 'Ship it', value: 'ship_v2' },
+            { label: 'Wait', value: 'wait_v2' },
+          ],
+        },
+      ],
     })
     const questionReply = await rewriteShuvcodeSdkRequest(
       new Request('http://127.0.0.1:4096/api/question/form_1/reply', {
@@ -191,7 +220,7 @@ describe('shuvcode prompt and route rewrite', () => {
       '/api/session/ses_1/form/form_1/reply',
     )
     expect(await (questionReply as Request).json()).toEqual({
-      answer: { choice: 'Ship it' },
+      answer: { choice: 'ship_v2' },
     })
   })
 })
@@ -244,9 +273,9 @@ describe('shuvcode response adapters', () => {
     })
   })
 
-  test('maps session messages and revert patches into v1 shapes', () => {
-    expect(
-      mapShuvcodeSessionMessages([
+  test('maps session messages into compact and tool-output consumer shapes', () => {
+    const mapped = mapShuvcodeSessionMessages(
+      [
         { id: 'msg_u', type: 'user', text: 'hi', time: { created: 1 } },
         {
           id: 'msg_a',
@@ -254,17 +283,63 @@ describe('shuvcode response adapters', () => {
           agent: 'build',
           model: { id: 'claude', providerID: 'anthropic' },
           time: { created: 2, completed: 3 },
-          content: [{ type: 'text', text: 'ok' }],
+          content: [
+            { type: 'text', text: 'ok' },
+            {
+              type: 'tool',
+              id: 'call_1',
+              name: 'bash',
+              state: {
+                status: 'completed',
+                input: { command: 'ls' },
+                content: [{ type: 'text', text: 'ok' }],
+                time: { start: 10, end: 20 },
+              },
+            },
+          ],
         },
-      ]),
-    ).toEqual([
+      ],
+      { sessionID: 'ses_1' },
+    )
+    const messages = Array.isArray(mapped) ? mapped : []
+    const lastUser = [...messages]
+      .reverse()
+      .find((message) => {
+        return (
+          message !== null &&
+          typeof message === 'object' &&
+          'info' in message &&
+          message.info !== null &&
+          typeof message.info === 'object' &&
+          'role' in message.info &&
+          message.info.role === 'user'
+        )
+      }) as
+      | {
+          info: { model: { providerID: string; modelID: string } }
+        }
+      | undefined
+    expect(lastUser).toBeDefined()
+    const { providerID, modelID } = lastUser!.info.model
+    expect({ providerID, modelID }).toEqual({
+      providerID: 'anthropic',
+      modelID: 'claude',
+    })
+    expect(mapped).toEqual([
       {
-        info: { id: 'msg_u', role: 'user', time: { created: 1 } },
+        info: {
+          id: 'msg_u',
+          sessionID: 'ses_1',
+          role: 'user',
+          time: { created: 1 },
+          model: { providerID: 'anthropic', modelID: 'claude' },
+        },
         parts: [{ type: 'text', text: 'hi' }],
       },
       {
         info: {
           id: 'msg_a',
+          sessionID: 'ses_1',
           role: 'assistant',
           parentID: undefined,
           agent: 'build',
@@ -275,7 +350,21 @@ describe('shuvcode response adapters', () => {
           tokens: undefined,
           cost: 0,
         },
-        parts: [{ type: 'text', text: 'ok' }],
+        parts: [
+          { type: 'text', text: 'ok' },
+          {
+            type: 'tool',
+            callID: 'call_1',
+            tool: 'bash',
+            state: {
+              status: 'completed',
+              input: { command: 'ls' },
+              output: 'ok',
+              title: 'bash',
+              time: { start: 10, end: 20 },
+            },
+          },
+        ],
       },
     ])
     expect(
@@ -445,7 +534,10 @@ describe('shuvcode event translation', () => {
                 key: 'choice',
                 type: 'string',
                 title: 'Next step',
-                options: [{ label: 'Ship' }, { label: 'Wait' }],
+                options: [
+                  { label: 'Ship it', value: 'ship_v2', description: 'Release now' },
+                  { label: 'Wait', value: 'wait_v2' },
+                ],
               },
             ],
           },
@@ -461,12 +553,86 @@ describe('shuvcode event translation', () => {
             {
               question: 'Next step',
               header: 'Next step',
-              options: [{ label: 'Ship' }, { label: 'Wait' }],
-              multiSelect: false,
+              options: [
+                { label: 'Ship it', description: 'Release now' },
+                { label: 'Wait', description: '' },
+              ],
+              multiple: false,
             },
           ],
         },
       },
     ])
+  })
+
+  test('session.step.failed completes the assistant message without session.error', () => {
+    const events = translateShuvcodeEvent({
+      type: 'session.step.failed',
+      created: 5,
+      data: {
+        sessionID: 'ses_1',
+        assistantMessageID: 'msg_a',
+        finish: 'error',
+        error: { type: 'ProviderError', message: 'boom' },
+      },
+    })
+    expect(events).toMatchObject([
+      {
+        type: 'message.updated',
+        properties: {
+          info: {
+            id: 'msg_a',
+            sessionID: 'ses_1',
+            role: 'assistant',
+            finish: 'error',
+          },
+        },
+      },
+    ])
+    expect(events.some((event) => {
+      return (
+        event !== null &&
+        typeof event === 'object' &&
+        'type' in event &&
+        event.type === 'session.error'
+      )
+    })).toBe(false)
+  })
+})
+
+describe('shuvcode worktree move', () => {
+  test('fails the fork when session.move returns non-2xx', async () => {
+    globalThis.fetch = (async (input: Parameters<typeof fetch>[0]) => {
+      const url = String(input instanceof Request ? input.url : input)
+      if (url.includes('/fork')) {
+        return new Response(JSON.stringify({ id: 'ses_fork' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      }
+      if (url.includes('/move')) {
+        return new Response('directory locked', { status: 500 })
+      }
+      throw new Error(`unexpected fetch ${url}`)
+    }) as typeof fetch
+
+    const response = await fetchShuvcodeSdk(
+      new Request('http://127.0.0.1:4096/api/session/ses_1/fork', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-opencode-directory': '/tmp/wt',
+        },
+        body: JSON.stringify({}),
+      }),
+    )
+    expect(response.ok).toBe(false)
+    expect(response.status).toBe(500)
+    expect(await response.json()).toMatchObject({
+      error: {
+        name: 'SessionMoveError',
+        message: expect.stringContaining('Failed to move forked session ses_fork'),
+      },
+    })
   })
 })

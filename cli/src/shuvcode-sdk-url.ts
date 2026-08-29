@@ -92,16 +92,32 @@ export function rewriteShuvcodePolicy(permission: unknown): {
   }
 }
 
-function unsupportedPermissionResponse(rules: ShuvcodeSessionPermissionRule[]) {
+export function unsupportedSessionPermissionError(
+  rules: ShuvcodeSessionPermissionRule[],
+): Error {
   const details = rules
     .map((rule) => `${rule.permission}:${rule.pattern ?? '*'}:${rule.action}`)
     .join(', ')
+  return new Error(
+    `Cannot start this session: shuvcode cannot apply required permission rules (${details}). Refusing to run with weaker isolation.`,
+  )
+}
+
+export function assertShuvcodeSessionPermissionsTranslatable(
+  permission: unknown,
+): Error | undefined {
+  const { untranslatable } = splitShuvcodeSessionPermissionRules(permission)
+  if (untranslatable.length === 0) return undefined
+  return unsupportedSessionPermissionError(untranslatable)
+}
+
+function unsupportedPermissionResponse(rules: ShuvcodeSessionPermissionRule[]) {
+  const error = unsupportedSessionPermissionError(rules)
   return new Response(
     JSON.stringify({
       error: {
         name: 'SessionPolicyUnsupportedError',
-        message:
-          `shuvcode session policy only supports tool allow-lists; cannot apply: ${details}`,
+        message: error.message,
       },
     }),
     {
@@ -356,6 +372,24 @@ function rewritePermissionReplyUrl({
   return next
 }
 
+function mapFormReplyValue(
+  field: { type: string; options: Array<{ label: string; value: string }> },
+  selected: string[],
+): string | string[] | boolean {
+  const toValue = (label: string) => {
+    const match = field.options.find(
+      (option) => option.label === label || option.value === label,
+    )
+    return match?.value ?? label
+  }
+  if (field.type === 'multiselect') return selected.map(toValue)
+  if (field.type === 'boolean') {
+    const first = selected[0]?.toLowerCase()
+    return first === 'yes' || first === 'true'
+  }
+  return selected[0] ? toValue(selected[0]) : ''
+}
+
 function rewriteQuestionReply({
   url,
   body,
@@ -387,15 +421,7 @@ function rewriteQuestionReply({
     const selected = Array.isArray(answers[index])
       ? answers[index].filter((item): item is string => typeof item === 'string')
       : []
-    if (field.type === 'multiselect') {
-      answer[field.key] = selected
-      return
-    }
-    if (field.type === 'boolean') {
-      answer[field.key] = selected[0]?.toLowerCase() === 'yes'
-      return
-    }
-    answer[field.key] = selected[0] ?? ''
+    answer[field.key] = mapFormReplyValue(field, selected)
   })
   const next = new URL(url)
   next.pathname = `/api/session/${encodeURIComponent(sessionID)}/form/${encodeURIComponent(match[1])}/reply`
@@ -585,18 +611,177 @@ export function mapShuvcodeProviderList({
   return { all, connected, default: defaultRecord }
 }
 
-export function mapShuvcodeSessionMessages(body: unknown): unknown {
+export function mapShuvcodeSessionMessages(
+  body: unknown,
+  options?: { sessionID?: string },
+): unknown {
   const messages = Array.isArray(body)
     ? body
     : isRecord(body) && Array.isArray(body.data)
       ? body.data
       : []
-  return messages.map((message) => mapShuvcodeSessionMessage(message))
+  const sessionID = options?.sessionID
+  const models = messages.map((message) => readSessionMessageModel(message))
+  return messages.map((message, index) =>
+    mapShuvcodeSessionMessage(message, {
+      sessionID,
+      model: inferSessionMessageModel(models, index),
+    }),
+  )
 }
 
-function mapShuvcodeSessionMessage(message: unknown): Record<string, unknown> {
-  if (!isRecord(message)) return { info: {}, parts: [] }
-  if (isRecord(message.info)) return message
+function readSessionMessageModel(
+  message: unknown,
+): { providerID: string; modelID: string } | undefined {
+  if (!isRecord(message)) return undefined
+  if (isRecord(message.info) && message.info.role === 'assistant') {
+    const providerID =
+      typeof message.info.providerID === 'string' ? message.info.providerID : ''
+    const modelID =
+      typeof message.info.modelID === 'string' ? message.info.modelID : ''
+    if (providerID || modelID) return { providerID, modelID }
+  }
+  if (message.type !== 'assistant') return undefined
+  const model = isRecord(message.model) ? message.model : {}
+  const modelID =
+    typeof model.id === 'string'
+      ? model.id
+      : typeof model.modelID === 'string'
+        ? model.modelID
+        : ''
+  const providerID = typeof model.providerID === 'string' ? model.providerID : ''
+  if (!providerID && !modelID) return undefined
+  return { providerID, modelID }
+}
+
+function inferSessionMessageModel(
+  models: Array<{ providerID: string; modelID: string } | undefined>,
+  index: number,
+): { providerID: string; modelID: string } {
+  for (let i = index + 1; i < models.length; i++) {
+    const next = models[i]
+    if (next) return next
+  }
+  for (let i = index - 1; i >= 0; i--) {
+    const previous = models[i]
+    if (previous) return previous
+  }
+  return { providerID: '', modelID: '' }
+}
+
+function mapShuvcodeToolState(
+  part: Record<string, unknown>,
+): Record<string, unknown> {
+  const state = isRecord(part.state) ? part.state : {}
+  const status = typeof state.status === 'string' ? state.status : 'pending'
+  const input = isRecord(state.input) ? state.input : {}
+  const time = isRecord(state.time) ? state.time : {}
+  const start = typeof time.start === 'number' ? time.start : 0
+  const end = typeof time.end === 'number' ? time.end : start
+  const toolName =
+    typeof part.tool === 'string'
+      ? part.tool
+      : typeof part.name === 'string'
+        ? part.name
+        : 'tool'
+  if (status === 'completed') {
+    const content = Array.isArray(state.content) ? state.content : []
+    const output =
+      typeof state.output === 'string'
+        ? state.output
+        : content
+            .map((item) =>
+              isRecord(item) && typeof item.text === 'string' ? item.text : '',
+            )
+            .filter((item) => item.length > 0)
+            .join('\n')
+    const titledContent = content.find(
+      (item) => isRecord(item) && typeof item.title === 'string',
+    )
+    const title =
+      typeof state.title === 'string'
+        ? state.title
+        : isRecord(titledContent) && typeof titledContent.title === 'string'
+          ? titledContent.title
+          : toolName
+    return {
+      status: 'completed',
+      input,
+      output,
+      title,
+      time: { start, end },
+    }
+  }
+  if (status === 'error') {
+    const error =
+      typeof state.error === 'string'
+        ? state.error
+        : isRecord(state.error) && typeof state.error.message === 'string'
+          ? state.error.message
+          : 'Unknown error'
+    return {
+      status: 'error',
+      input,
+      error,
+      time: { start, end },
+    }
+  }
+  if (status === 'running') {
+    return {
+      status: 'running',
+      input,
+      time: { start },
+    }
+  }
+  return {
+    status: 'pending',
+    input,
+    raw: typeof state.raw === 'string' ? state.raw : '',
+  }
+}
+
+function mapShuvcodeMessagePart(part: unknown): unknown {
+  if (!isRecord(part) || part.type !== 'tool') return part
+  return {
+    ...part,
+    state: mapShuvcodeToolState(part),
+  }
+}
+
+function mapShuvcodeSessionMessage(
+  message: unknown,
+  options: {
+    sessionID?: string
+    model: { providerID: string; modelID: string }
+  },
+): Record<string, unknown> {
+  if (!isRecord(message)) {
+    return {
+      info: {
+        sessionID: options.sessionID,
+        role: 'user',
+        time: { created: 0 },
+        model: options.model,
+      },
+      parts: [],
+    }
+  }
+  if (isRecord(message.info)) {
+    const info: Record<string, unknown> = {
+      ...message.info,
+      sessionID:
+        typeof message.info.sessionID === 'string'
+          ? message.info.sessionID
+          : options.sessionID,
+    }
+    if (info.role === 'user' && !isRecord(info.model)) {
+      info.model = options.model
+    }
+    const parts = Array.isArray(message.parts)
+      ? message.parts.map((part) => mapShuvcodeMessagePart(part))
+      : []
+    return { info, parts }
+  }
   const type = typeof message.type === 'string' ? message.type : undefined
   const id = typeof message.id === 'string' ? message.id : ''
   const created = isRecord(message.time) && typeof message.time.created === 'number'
@@ -609,8 +794,10 @@ function mapShuvcodeSessionMessage(message: unknown): Record<string, unknown> {
     return {
       info: {
         id,
+        sessionID: options.sessionID,
         role: 'user',
         time: { created },
+        model: options.model,
       },
       parts: typeof message.text === 'string'
         ? [{ type: 'text', text: message.text }]
@@ -623,6 +810,7 @@ function mapShuvcodeSessionMessage(message: unknown): Record<string, unknown> {
     return {
       info: {
         id,
+        sessionID: options.sessionID,
         role: 'assistant',
         parentID: typeof message.parentID === 'string' ? message.parentID : undefined,
         agent: typeof message.agent === 'string' ? message.agent : undefined,
@@ -642,12 +830,13 @@ function mapShuvcodeSessionMessage(message: unknown): Record<string, unknown> {
           return [{ type: 'reasoning', text: part.text }]
         }
         if (part.type === 'tool' && typeof part.id === 'string') {
+          const tool = typeof part.name === 'string' ? part.name : 'tool'
           return [
             {
               type: 'tool',
               callID: part.id,
-              tool: typeof part.name === 'string' ? part.name : 'tool',
-              state: part.state,
+              tool,
+              state: mapShuvcodeToolState({ ...part, tool }),
             },
           ]
         }
@@ -658,8 +847,10 @@ function mapShuvcodeSessionMessage(message: unknown): Record<string, unknown> {
   return {
     info: {
       id,
+      sessionID: options.sessionID,
       role: type ?? 'user',
       time: { created },
+      model: options.model,
     },
     parts: [],
   }
@@ -702,6 +893,11 @@ function isProviderListPath(pathname: string) {
 
 function isSessionMessageListPath(pathname: string) {
   return /\/session\/[^/]+\/message$/.test(pathname)
+}
+
+function sessionIdFromMessageListPath(pathname: string): string | undefined {
+  const match = pathname.match(/\/session\/([^/]+)\/message$/)
+  return match?.[1] ? decodeURIComponent(match[1]) : undefined
 }
 
 function isSessionCollectionPath(pathname: string) {
@@ -808,7 +1004,9 @@ export async function rewriteShuvcodeSdkResponse(
       defaultModel: catalog.defaultModel,
     })
   } else if (isSessionMessageListPath(pathname)) {
-    body = mapShuvcodeSessionMessages(body)
+    body = mapShuvcodeSessionMessages(body, {
+      sessionID: sessionIdFromMessageListPath(pathname),
+    })
   } else if (isRevertStagePath(pathname)) {
     body = mapShuvcodeRevertResponse(body)
   } else if (
@@ -853,7 +1051,7 @@ async function loadShuvcodeModelCatalog({
   }
 }
 
-async function moveForkedShuvcodeSession({
+export async function moveForkedShuvcodeSession({
   origin,
   headers,
   sessionID,
@@ -863,17 +1061,35 @@ async function moveForkedShuvcodeSession({
   headers: Headers
   sessionID: string
   directory: string
-}): Promise<void> {
+}): Promise<Error | undefined> {
   const authorization = headers.get('authorization')
   const requestHeaders: Record<string, string> = {
     'content-type': 'application/json',
   }
   if (authorization) requestHeaders.authorization = authorization
-  await fetch(`${origin}/api/session/${encodeURIComponent(sessionID)}/move`, {
-    method: 'POST',
-    headers: requestHeaders,
-    body: JSON.stringify({ directory }),
-  }).catch(() => null)
+  const response = await fetch(
+    `${origin}/api/session/${encodeURIComponent(sessionID)}/move`,
+    {
+      method: 'POST',
+      headers: requestHeaders,
+      body: JSON.stringify({ directory }),
+    },
+  ).catch((error) =>
+    error instanceof Error ? error : new Error(String(error)),
+  )
+  if (response instanceof Error) {
+    return new Error(
+      `Failed to move forked session ${sessionID} to ${directory}: ${response.message}`,
+      { cause: response },
+    )
+  }
+  if (!response.ok) {
+    const text = await response.text().catch(() => '')
+    return new Error(
+      `Failed to move forked session ${sessionID} to ${directory}: ${response.status}${text ? ` ${text}` : ''}`,
+    )
+  }
+  return undefined
 }
 
 export async function fetchShuvcodeSdk(
@@ -896,19 +1112,42 @@ export async function fetchShuvcodeSdk(
     mapped.ok
   ) {
     const directory = request.headers.get('x-opencode-directory')
-    const parsed = await mapped
-      .clone()
-      .json()
-      .catch(() => null)
-    const sessionID =
-      isRecord(parsed) && typeof parsed.id === 'string' ? parsed.id : undefined
-    if (directory && sessionID) {
-      await moveForkedShuvcodeSession({
+    if (directory) {
+      const parsed = await mapped
+        .clone()
+        .json()
+        .catch(() => null)
+      const sessionID =
+        isRecord(parsed) && typeof parsed.id === 'string' ? parsed.id : undefined
+      if (!sessionID) {
+        return new Response(
+          JSON.stringify({
+            error: {
+              name: 'SessionMoveError',
+              message:
+                'Fork succeeded but session id was missing; refusing to bind a worktree session that was not moved',
+            },
+          }),
+          { status: 500, headers: { 'content-type': 'application/json' } },
+        )
+      }
+      const moveError = await moveForkedShuvcodeSession({
         origin: new URL(rewritten.url).origin,
         headers: request.headers,
         sessionID,
         directory: decodeURIComponent(directory),
       })
+      if (moveError) {
+        return new Response(
+          JSON.stringify({
+            error: {
+              name: 'SessionMoveError',
+              message: moveError.message,
+            },
+          }),
+          { status: 500, headers: { 'content-type': 'application/json' } },
+        )
+      }
     }
   }
   return mapped

@@ -8,6 +8,7 @@
 import {
   rememberShuvcodeForm,
   rememberShuvcodePermissionRequest,
+  type RememberedFormField,
 } from './shuvcode-adapter-state.js'
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -148,41 +149,66 @@ function readTokens(value: unknown) {
   }
 }
 
-function mapFormFieldToQuestion(field: unknown): Array<{
-  question: string
-  header: string
-  options: Array<{ label: string; description?: string }>
-  multiSelect: boolean
-}> {
-  if (!isRecord(field)) return []
-  const title = asString(field.title) ?? asString(field.key) ?? 'Question'
-  const description = asString(field.description)
-  const options = Array.isArray(field.options)
-    ? field.options.flatMap((option) => {
-        if (!isRecord(option)) return []
-        const label = asString(option.label) ?? asString(option.value)
-        if (!label) return []
-        const optionDescription = asString(option.description)
-        return [
-          optionDescription
-            ? { label, description: optionDescription }
-            : { label },
-        ]
-      })
-    : field.type === 'boolean'
-      ? [{ label: 'Yes' }, { label: 'No' }]
-      : []
-  if (options.length < 2) {
-    options.push({ label: 'Yes' }, { label: 'No' })
+function mapFormField(field: unknown): {
+  question: {
+    question: string
+    header: string
+    options: Array<{ label: string; description: string }>
+    multiple: boolean
   }
-  return [
-    {
+  remembered: RememberedFormField
+} | undefined {
+  if (!isRecord(field) || typeof field.key !== 'string') return undefined
+  const title = asString(field.title) ?? field.key
+  const description = asString(field.description)
+  const type = asString(field.type) ?? 'string'
+  let optionPairs: Array<{ label: string; description: string; value: string }> = []
+  if (Array.isArray(field.options)) {
+    optionPairs = field.options.flatMap((option) => {
+      if (typeof option === 'string') {
+        return [{ label: option, description: '', value: option }]
+      }
+      if (!isRecord(option)) return []
+      const value = asString(option.value) ?? asString(option.label)
+      const label = asString(option.label) ?? value
+      if (!label) return []
+      return [
+        {
+          label,
+          description: asString(option.description) ?? '',
+          value: value ?? label,
+        },
+      ]
+    })
+  } else if (type === 'boolean') {
+    optionPairs = [
+      { label: 'Yes', description: '', value: 'Yes' },
+      { label: 'No', description: '', value: 'No' },
+    ]
+  }
+  if (optionPairs.length < 2) {
+    optionPairs = [
+      ...optionPairs,
+      { label: 'Yes', description: '', value: 'Yes' },
+      { label: 'No', description: '', value: 'No' },
+    ]
+  }
+  return {
+    question: {
       question: description || title,
       header: title.slice(0, 12),
-      options,
-      multiSelect: field.type === 'multiselect',
+      options: optionPairs.map((option) => ({
+        label: option.label,
+        description: option.description,
+      })),
+      multiple: type === 'multiselect',
     },
-  ]
+    remembered: {
+      key: field.key,
+      type,
+      options: optionPairs.map(({ label, value }) => ({ label, value })),
+    },
+  }
 }
 
 function readModel(value: unknown): { id: string; providerID: string } | undefined {
@@ -475,7 +501,6 @@ export function translateShuvcodeEvent(
               ),
             ]
           : []),
-        sessionError({ sessionID, error: data.error }),
       ]
     }
     case 'session.step.started': {
@@ -745,13 +770,14 @@ export function translateShuvcodeEvent(
       const formSessionID = asString(form.sessionID) || sessionID
       const fields = Array.isArray(form.fields) ? form.fields : []
       if (!formID || !formSessionID) return []
+      const mapped = fields.flatMap((field) => {
+        const result = mapFormField(field)
+        return result ? [result] : []
+      })
       rememberShuvcodeForm({
         formID,
         sessionID: formSessionID,
-        fields: fields.flatMap((field) => {
-          if (!isRecord(field) || typeof field.key !== 'string') return []
-          return [{ key: field.key, type: asString(field.type) ?? 'string' }]
-        }),
+        fields: mapped.map((field) => field.remembered),
       })
       return [
         {
@@ -759,7 +785,7 @@ export function translateShuvcodeEvent(
           properties: {
             id: formID,
             sessionID: formSessionID,
-            questions: fields.flatMap((field) => mapFormFieldToQuestion(field)),
+            questions: mapped.map((field) => field.question),
           },
         },
       ]

@@ -5,6 +5,7 @@
 export type RememberedFormField = {
   key: string
   type: string
+  options: Array<{ label: string; value: string }>
 }
 
 const permissionSessionByRequestId = new Map<string, string>()

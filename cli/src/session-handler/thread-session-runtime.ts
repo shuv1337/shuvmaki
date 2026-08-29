@@ -29,7 +29,7 @@ import {
   writeInjectionGuardConfig,
   extractSdkErrorMessage,
 } from '../opencode.js'
-import { splitShuvcodeSessionPermissionRules } from '../shuvcode-sdk-url.js'
+import { assertShuvcodeSessionPermissionsTranslatable } from '../shuvcode-sdk-url.js'
 import { isAbortError } from '../utils.js'
 import {
   registerEventListener,
@@ -4353,27 +4353,16 @@ export class ThreadSessionRuntime {
         }),
         ...parsePermissionRules(permissions ?? []),
       ]
-      const { untranslatable } = splitShuvcodeSessionPermissionRules(sessionPermissions)
-      if (untranslatable.length > 0) {
-        logger.warn(
-          `[ENSURE SESSION] Gating untranslatable shuvcode permission rules: ${untranslatable
-            .map((rule) => `${rule.permission}:${rule.pattern}:${rule.action}`)
-            .join(', ')}`,
-        )
+      const permissionError =
+        assertShuvcodeSessionPermissionsTranslatable(sessionPermissions)
+      if (permissionError) {
+        logger.error(`[ENSURE SESSION] ${permissionError.message}`)
+        return permissionError
       }
-      const translatablePermissions = sessionPermissions.filter((rule) => {
-        return !untranslatable.some((blocked) => {
-          return (
-            blocked.permission === rule.permission &&
-            blocked.pattern === (rule.pattern ?? '*') &&
-            blocked.action === rule.action
-          )
-        })
-      })
       // Omit title so OpenCode auto-generates a summary from the conversation
       const createResult = await getClient().session.create({
         directory: this.sdkDirectory,
-        permission: translatablePermissions,
+        permission: sessionPermissions,
       }).catch((e) => new OpenCodeSdkError({ operation: 'session.create', cause: e }))
       if (createResult instanceof Error) {
         logger.error(

@@ -15,6 +15,10 @@ declare global {
 
 import { DiscordOperationError } from './errors.js'
 import {
+  isDirectReplyToBotMessage,
+  shouldIgnoreMentionModeThreadMessage,
+} from './mention-mode-policy.js'
+import {
   initDatabase,
   closeDatabase,
   getThreadWorktreeOrWorkspace,
@@ -640,16 +644,56 @@ export async function startDiscordBot({
           discordClient.user && message.mentions.has(discordClient.user.id)
         const botCreatedThread =
           discordClient.user && thread.ownerId === discordClient.user.id
-        if (
-          !hasExistingSession &&
-          !botMentioned &&
-          !isCliInjectedPrompt &&
-          !botCreatedThread
-        ) {
+        let repliedUserId = message.mentions.repliedUser?.id
+        if (!repliedUserId && message.reference?.messageId) {
+          const referencedMessage = await message.fetchReference().catch(
+            (e) =>
+              new DiscordOperationError({
+                operation: 'fetchReferencedMessage',
+                cause: e,
+              }),
+          )
+          if (!(referencedMessage instanceof Error)) {
+            repliedUserId = referencedMessage.author.id
+          }
+        }
+        const isDirectReplyToBot = isDirectReplyToBotMessage({
+          repliedUserId,
+          botUserId: discordClient.user?.id,
+        })
+        if (!hasExistingSession && !botMentioned && !isCliInjectedPrompt && !botCreatedThread) {
           discordLogger.log(
             `Ignoring thread ${thread.id}: no existing session and bot not mentioned`,
           )
           return
+        }
+
+        const parentId = await resolveThreadParentId({
+          channelId: thread.id,
+          cachedParentId: thread.parentId,
+          client: discordClient,
+        })
+        if (!parentId && !isCliInjectedPrompt) {
+          discordLogger.log(`Ignoring thread ${thread.id}: parent channel could not be resolved`)
+          return
+        }
+        const shellCommand = message.content?.startsWith('!') ? message.content.slice(1).trim() : ''
+        if (parentId && !isCliInjectedPrompt) {
+          const mentionModeEnabled = await getChannelMentionMode(parentId)
+          if (
+            shouldIgnoreMentionModeThreadMessage({
+              mentionModeEnabled,
+              botMentioned: Boolean(botMentioned),
+              isDirectReplyToBot,
+              isShellCommand: Boolean(shellCommand),
+              isContextOnlyMessage: Boolean(isLeadingMentionToOtherUser),
+            })
+          ) {
+            voiceLogger.log(
+              `[IGNORED] Mention mode enabled in thread, bot not mentioned and not a reply to bot`,
+            )
+            return
+          }
         }
 
         // Context-only messages (user-to-user replies) can't be stored without
@@ -659,11 +703,6 @@ export async function startDiscordBot({
           return
         }
 
-        const parentId = await resolveThreadParentId({
-          channelId: thread.id,
-          cachedParentId: thread.parentId,
-          client: discordClient,
-        })
         let projectDirectory: string | undefined
         if (parentId) {
           const channelConfig = await getChannelDirectory(parentId)
@@ -716,28 +755,20 @@ export async function startDiscordBot({
         // ! prefix runs a shell command instead of starting/continuing a session.
         // Use worktree directory if available, so commands run in the worktree cwd.
         // Skip shell commands while worktree is pending — they'd run in the base dir.
-        if (
-          message.content?.startsWith('!') &&
-          projectDirectory &&
-          worktreeInfo?.status !== 'pending'
-        ) {
-          const shellCmd = message.content.slice(1).trim()
-          if (shellCmd) {
-            const shellDir =
-              worktreeInfo?.status === 'ready' &&
-              worktreeInfo.workspace_directory
-                ? worktreeInfo.workspace_directory
-                : projectDirectory
-            const loadingReply = await message.reply({
-              content: `Running \`${shellCmd.slice(0, 1900)}\`...`,
-            })
-            const result = await runShellCommand({
-              command: shellCmd,
-              directory: shellDir,
-            })
-            await loadingReply.edit({ content: result })
-            return
-          }
+        if (shellCommand && projectDirectory && worktreeInfo?.status !== 'pending') {
+          const shellDir =
+            worktreeInfo?.status === 'ready' && worktreeInfo.workspace_directory
+              ? worktreeInfo.workspace_directory
+              : projectDirectory
+          const loadingReply = await message.reply({
+            content: `Running \`${shellCommand.slice(0, 1900)}\`...`,
+          })
+          const result = await runShellCommand({
+            command: shellCommand,
+            directory: shellDir,
+          })
+          await loadingReply.edit({ content: result })
+          return
         }
 
         // `. btw` suffix mirrors /btw for fast side-question forks.
@@ -874,7 +905,7 @@ export async function startDiscordBot({
           injectionGuardPatterns: cliInjectedInjectionGuardPatterns,
           parentSessionId: cliInjectedParentSessionId,
           isSleepWake: isSleepWake || undefined,
-          noReply: isLeadingMentionToOtherUser || undefined,
+          noReply: (isLeadingMentionToOtherUser && !isDirectReplyToBot) || undefined,
           sessionStartSource: sessionStartSource
             ? {
                 scheduleKind: sessionStartSource.scheduleKind,

@@ -375,7 +375,7 @@ function rewritePermissionReplyUrl({
 function mapFormReplyValue(
   field: { type: string; options: Array<{ label: string; value: string }> },
   selected: string[],
-): string | string[] | boolean {
+): string | string[] | number | boolean | Error {
   const toValue = (label: string) => {
     const match = field.options.find(
       (option) => option.label === label || option.value === label,
@@ -387,7 +387,15 @@ function mapFormReplyValue(
     const first = selected[0]?.toLowerCase()
     return first === 'yes' || first === 'true'
   }
-  return selected[0] ? toValue(selected[0]) : ''
+  const value = selected[0] ? toValue(selected[0]) : ''
+  if (field.type === 'number' || field.type === 'integer') {
+    const parsed = value.trim() === '' ? Number.NaN : Number(value)
+    if (Number.isFinite(parsed) && (field.type !== 'integer' || Number.isInteger(parsed))) {
+      return parsed
+    }
+    return new Error(`Invalid ${field.type} answer`)
+  }
+  return value
 }
 
 function rewriteQuestionReply({
@@ -416,13 +424,23 @@ function rewriteQuestionReply({
     )
   }
   const answers = Array.isArray(record.answers) ? record.answers : []
-  const answer: Record<string, string | string[] | boolean> = {}
-  form.fields.forEach((field, index) => {
+  const answer: Record<string, string | string[] | number | boolean> = {}
+  for (const [index, field] of form.fields.entries()) {
     const selected = Array.isArray(answers[index])
       ? answers[index].filter((item): item is string => typeof item === 'string')
       : []
-    answer[field.key] = mapFormReplyValue(field, selected)
-  })
+    const value = mapFormReplyValue(field, selected)
+    if (value instanceof Error) {
+      return new Response(
+        JSON.stringify({
+          name: 'QuestionReplyValidationError',
+          message: `${value.message} for field ${field.key}`,
+        }),
+        { status: 422, headers: { 'content-type': 'application/json' } },
+      )
+    }
+    answer[field.key] = value
+  }
   const next = new URL(url)
   next.pathname = `/api/session/${encodeURIComponent(sessionID)}/form/${encodeURIComponent(match[1])}/reply`
   return { url: next, body: JSON.stringify({ answer }) }
@@ -621,13 +639,26 @@ export function mapShuvcodeSessionMessages(
       ? body.data
       : []
   const sessionID = options?.sessionID
-  const models = messages.map((message) => readSessionMessageModel(message))
-  return messages.map((message, index) =>
+  const chronological = [...messages].sort((left, right) => {
+    return readSessionMessageCreated(left) - readSessionMessageCreated(right)
+  })
+  const models = chronological.map((message) => readSessionMessageModel(message))
+  return chronological.map((message, index) =>
     mapShuvcodeSessionMessage(message, {
       sessionID,
       model: inferSessionMessageModel(models, index),
     }),
   )
+}
+
+function readSessionMessageCreated(message: unknown): number {
+  if (!isRecord(message)) return 0
+  const time = isRecord(message.info) && isRecord(message.info.time)
+    ? message.info.time
+    : isRecord(message.time)
+      ? message.time
+      : {}
+  return typeof time.created === 'number' ? time.created : 0
 }
 
 function readSessionMessageModel(
@@ -675,9 +706,23 @@ function mapShuvcodeToolState(
   const state = isRecord(part.state) ? part.state : {}
   const status = typeof state.status === 'string' ? state.status : 'pending'
   const input = isRecord(state.input) ? state.input : {}
-  const time = isRecord(state.time) ? state.time : {}
-  const start = typeof time.start === 'number' ? time.start : 0
-  const end = typeof time.end === 'number' ? time.end : start
+  const stateTime = isRecord(state.time) ? state.time : {}
+  const partTime = isRecord(part.time) ? part.time : {}
+  const start =
+    typeof stateTime.start === 'number'
+      ? stateTime.start
+      : typeof partTime.ran === 'number'
+        ? partTime.ran
+        : typeof partTime.created === 'number'
+          ? partTime.created
+          : 0
+  const end =
+    typeof stateTime.end === 'number'
+      ? stateTime.end
+      : typeof partTime.completed === 'number'
+        ? partTime.completed
+        : start
+  const metadata = isRecord(state.metadata) ? state.metadata : {}
   const toolName =
     typeof part.tool === 'string'
       ? part.tool
@@ -709,6 +754,7 @@ function mapShuvcodeToolState(
       input,
       output,
       title,
+      metadata,
       time: { start, end },
     }
   }
@@ -723,6 +769,7 @@ function mapShuvcodeToolState(
       status: 'error',
       input,
       error,
+      metadata,
       time: { start, end },
     }
   }
@@ -730,6 +777,7 @@ function mapShuvcodeToolState(
     return {
       status: 'running',
       input,
+      metadata,
       time: { start },
     }
   }
@@ -1111,7 +1159,9 @@ export async function fetchShuvcodeSdk(
     rewritten.url.includes('/fork') &&
     mapped.ok
   ) {
-    const directory = request.headers.get('x-opencode-directory')
+    const directory =
+      request.headers.get('x-opencode-directory') ??
+      new URL(request.url).searchParams.get('directory')
     if (directory) {
       const parsed = await mapped
         .clone()
@@ -1122,11 +1172,9 @@ export async function fetchShuvcodeSdk(
       if (!sessionID) {
         return new Response(
           JSON.stringify({
-            error: {
-              name: 'SessionMoveError',
-              message:
-                'Fork succeeded but session id was missing; refusing to bind a worktree session that was not moved',
-            },
+            name: 'SessionMoveError',
+            message:
+              'Fork succeeded but session id was missing; refusing to bind a worktree session that was not moved',
           }),
           { status: 500, headers: { 'content-type': 'application/json' } },
         )
@@ -1135,15 +1183,13 @@ export async function fetchShuvcodeSdk(
         origin: new URL(rewritten.url).origin,
         headers: request.headers,
         sessionID,
-        directory: decodeURIComponent(directory),
+        directory,
       })
       if (moveError) {
         return new Response(
           JSON.stringify({
-            error: {
-              name: 'SessionMoveError',
-              message: moveError.message,
-            },
+            name: 'SessionMoveError',
+            message: moveError.message,
           }),
           { status: 500, headers: { 'content-type': 'application/json' } },
         )

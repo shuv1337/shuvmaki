@@ -1,3 +1,4 @@
+import { createOpencodeClient } from '@opencode-ai/sdk/v2'
 import { afterEach, describe, expect, test } from 'vitest'
 import {
   rememberShuvcodeForm,
@@ -10,6 +11,7 @@ import {
 } from './shuvcode-event-adapter.js'
 import {
   assertShuvcodeSessionPermissionsTranslatable,
+  createShuvcodeSdkFetch,
   fetchShuvcodeSdk,
   mapShuvcodeProviderList,
   mapShuvcodeRevertResponse,
@@ -207,20 +209,21 @@ describe('shuvcode prompt and route rewrite', () => {
             { label: 'Wait', value: 'wait_v2' },
           ],
         },
+        { key: 'count', type: 'integer', options: [] },
       ],
     })
     const questionReply = await rewriteShuvcodeSdkRequest(
       new Request('http://127.0.0.1:4096/api/question/form_1/reply', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ answers: [['Ship it']] }),
+        body: JSON.stringify({ answers: [['Ship it'], ['42']] }),
       }),
     )
     expect(new URL((questionReply as Request).url).pathname).toBe(
       '/api/session/ses_1/form/form_1/reply',
     )
     expect(await (questionReply as Request).json()).toEqual({
-      answer: { choice: 'ship_v2' },
+      answer: { choice: 'ship_v2', count: 42 },
     })
   })
 })
@@ -276,7 +279,6 @@ describe('shuvcode response adapters', () => {
   test('maps session messages into compact and tool-output consumer shapes', () => {
     const mapped = mapShuvcodeSessionMessages(
       [
-        { id: 'msg_u', type: 'user', text: 'hi', time: { created: 1 } },
         {
           id: 'msg_a',
           type: 'assistant',
@@ -293,11 +295,13 @@ describe('shuvcode response adapters', () => {
                 status: 'completed',
                 input: { command: 'ls' },
                 content: [{ type: 'text', text: 'ok' }],
-                time: { start: 10, end: 20 },
+                metadata: { exit: 0 },
               },
+              time: { created: 9, ran: 10, completed: 20 },
             },
           ],
         },
+        { id: 'msg_u', type: 'user', text: 'hi', time: { created: 1 } },
       ],
       { sessionID: 'ses_1' },
     )
@@ -361,6 +365,7 @@ describe('shuvcode response adapters', () => {
               input: { command: 'ls' },
               output: 'ok',
               title: 'bash',
+              metadata: { exit: 0 },
               time: { start: 10, end: 20 },
             },
           },
@@ -558,6 +563,7 @@ describe('shuvcode event translation', () => {
                 { label: 'Wait', description: '' },
               ],
               multiple: false,
+              custom: false,
             },
           ],
         },
@@ -598,6 +604,47 @@ describe('shuvcode event translation', () => {
       )
     })).toBe(false)
   })
+
+  test('keeps free-form and numeric form fields custom instead of inventing choices', () => {
+    expect(
+      translateShuvcodeEvent({
+        type: 'form.created',
+        data: {
+          form: {
+            id: 'form_freeform',
+            sessionID: 'ses_1',
+            title: 'Details',
+            fields: [
+              { key: 'name', type: 'string', title: 'Name' },
+              { key: 'count', type: 'integer', title: 'Count' },
+              {
+                key: 'oauth',
+                type: 'external',
+                title: 'Connect',
+                url: 'https://example.com/connect',
+              },
+            ],
+          },
+        },
+      }),
+    ).toMatchObject([
+      {
+        type: 'question.asked',
+        properties: {
+          questions: [
+            { header: 'Name', options: [], custom: true },
+            { header: 'Count', options: [], custom: true },
+            {
+              header: 'Connect',
+              question: 'Connect\nhttps://example.com/connect',
+              options: [],
+              custom: true,
+            },
+          ],
+        },
+      },
+    ])
+  })
 })
 
 describe('shuvcode worktree move', () => {
@@ -616,23 +663,18 @@ describe('shuvcode worktree move', () => {
       throw new Error(`unexpected fetch ${url}`)
     }) as typeof fetch
 
-    const response = await fetchShuvcodeSdk(
-      new Request('http://127.0.0.1:4096/api/session/ses_1/fork', {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'x-opencode-directory': '/tmp/wt',
-        },
-        body: JSON.stringify({}),
-      }),
-    )
-    expect(response.ok).toBe(false)
-    expect(response.status).toBe(500)
-    expect(await response.json()).toMatchObject({
-      error: {
-        name: 'SessionMoveError',
-        message: expect.stringContaining('Failed to move forked session ses_fork'),
-      },
+    const client = createOpencodeClient({
+      baseUrl: 'http://127.0.0.1:4096/api',
+      fetch: createShuvcodeSdkFetch(),
+    })
+    const response = await client.session.fork({
+      sessionID: 'ses_1',
+      directory: '/tmp/wt',
+    })
+    expect(response.data).toBeUndefined()
+    expect(response.error).toMatchObject({
+      name: 'SessionMoveError',
+      message: expect.stringContaining('Failed to move forked session ses_fork'),
     })
   })
 })

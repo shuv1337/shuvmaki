@@ -39,6 +39,7 @@ import {
 import { getOrCreateRuntime } from '../session-handler/thread-session-runtime.js'
 import {
   buildSessionPermissions,
+  extractSdkErrorMessage,
   initializeOpencodeForDirectory,
 } from '../opencode.js'
 import { assertShuvcodeSessionPermissionsTranslatable } from '../shuvcode-sdk-url.js'
@@ -656,6 +657,17 @@ async function handleWorktreeInThread({
         await sendThreadMessage(
           worktreeThread,
           `✗ Worktree is ready, but failed to reuse session context there: ${forkResponse.message}`,
+        )
+        return
+      }
+
+      if (forkResponse.error) {
+        const error = new Error(extractSdkErrorMessage(forkResponse.error))
+        logger.error('[NEW-WORKTREE] Failed to fork session into worktree:', error)
+        void notifyError(error, 'Failed to fork session into worktree')
+        await sendThreadMessage(
+          worktreeThread,
+          `✗ Worktree is ready, but failed to reuse session context there: ${error.message}`,
         )
         return
       }

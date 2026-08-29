@@ -155,6 +155,7 @@ function mapFormField(field: unknown): {
     header: string
     options: Array<{ label: string; description: string }>
     multiple: boolean
+    custom: boolean
   }
   remembered: RememberedFormField
 } | undefined {
@@ -186,22 +187,17 @@ function mapFormField(field: unknown): {
       { label: 'No', description: '', value: 'No' },
     ]
   }
-  if (optionPairs.length < 2) {
-    optionPairs = [
-      ...optionPairs,
-      { label: 'Yes', description: '', value: 'Yes' },
-      { label: 'No', description: '', value: 'No' },
-    ]
-  }
+  const externalUrl = type === 'external' ? asString(field.url) : undefined
   return {
     question: {
-      question: description || title,
+      question: [description || title, externalUrl].filter(Boolean).join('\n'),
       header: title.slice(0, 12),
       options: optionPairs.map((option) => ({
         label: option.label,
         description: option.description,
       })),
       multiple: type === 'multiselect',
+      custom: optionPairs.length === 0 || field.custom === true,
     },
     remembered: {
       key: field.key,

@@ -21,6 +21,7 @@ import {
   rewriteShuvcodeSdkRequest,
   rewriteShuvcodeSessionCreateBody,
   splitShuvcodeSessionPermissionRules,
+  unwrapShuvcodeJsonBody,
 } from './shuvcode-sdk-url.js'
 
 const originalFetch = globalThis.fetch
@@ -28,6 +29,17 @@ const originalFetch = globalThis.fetch
 afterEach(() => {
   resetShuvcodeAdapterState()
   globalThis.fetch = originalFetch
+})
+
+describe('shuvcode response envelopes', () => {
+  test('unwraps collection data when shuvcode includes request location metadata', () => {
+    expect(
+      unwrapShuvcodeJsonBody({
+        data: [{ name: 'build', mode: 'primary' }],
+        location: { directory: '/tmp/project', workspace: 'default' },
+      }),
+    ).toEqual([{ name: 'build', mode: 'primary' }])
+  })
 })
 
 describe('shuvcode session policy', () => {

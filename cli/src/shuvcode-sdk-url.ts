@@ -555,7 +555,9 @@ export async function rewriteShuvcodeSdkRequest(
 
 export function unwrapShuvcodeJsonBody(body: unknown): unknown {
   if (!isRecord(body) || !('data' in body)) return body
-  const extraKeys = Object.keys(body).filter((key) => key !== 'data' && key !== 'cursor')
+  const extraKeys = Object.keys(body).filter(
+    (key) => key !== 'data' && key !== 'cursor' && key !== 'location',
+  )
   if (extraKeys.length > 0) return body
   return body.data
 }

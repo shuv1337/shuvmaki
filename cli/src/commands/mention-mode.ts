@@ -1,7 +1,7 @@
 // /toggle-mention-mode command.
 // Toggles mention-only mode for a channel.
-// When enabled, bot only responds to messages that @mention it.
-// Messages in threads are not affected - they always work without mentions.
+// When enabled, bot only responds to @mentions. In threads, direct replies
+// to a bot message and authorized shell commands also count.
 
 import {
   ChatInputCommandInteraction,
@@ -60,7 +60,7 @@ export async function handleToggleMentionModeCommand({
 
   await command.reply({
     content: nextEnabled
-      ? `Mention mode **enabled** for this channel.\nThe bot will only start new sessions when @mentioned.\nMessages in existing threads are not affected.`
+      ? `Mention mode **enabled** for this channel.\nThe bot will only respond when @mentioned.\nIn threads, direct replies to the bot and authorized \`!\` commands also count.`
       : `Mention mode **disabled** for this channel.\nThe bot will respond to all messages in **#${channel.name}**.`,
   })
 }

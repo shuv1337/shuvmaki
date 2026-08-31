@@ -55,8 +55,9 @@ export type KimakiState = {
   // Read by: database.ts (fallback in getChannelVerbosity), message formatting.
   defaultVerbosity: VerbosityLevel
 
-  // When true, the bot only responds to messages that @mention it in text
-  // channels (threads are unaffected). Fallback when no channel override in DB.
+  // When true, the bot only responds to @mentions in text channels. Threads
+  // also allow direct bot replies and authorized shell commands. Fallback when
+  // no channel override exists in the DB.
   // Changes: set once at startup from --mention-mode CLI flag.
   // Read by: database.ts (fallback in getChannelMentionMode), discord-bot.ts guard.
   defaultMentionMode: boolean

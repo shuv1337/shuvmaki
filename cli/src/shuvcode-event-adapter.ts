@@ -23,7 +23,7 @@ function asNumber(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined
 }
 
-function textPartId({
+export function getShuvcodeTextPartId({
   sessionID,
   messageID,
   ordinal,
@@ -35,7 +35,7 @@ function textPartId({
   return `text-${sessionID}-${messageID}-${ordinal ?? 0}`
 }
 
-function toolPartId({
+export function getShuvcodeToolPartId({
   sessionID,
   toolID,
 }: {
@@ -563,7 +563,7 @@ export function translateShuvcodeEvent(
       if (!sessionID || !messageID) return []
       return [
         partUpdated({
-          id: textPartId({
+          id: getShuvcodeTextPartId({
             sessionID,
             messageID,
             ordinal: asNumber(data.ordinal),
@@ -582,7 +582,7 @@ export function translateShuvcodeEvent(
       if (!sessionID || !messageID) return []
       return [
         partUpdated({
-          id: textPartId({
+          id: getShuvcodeTextPartId({
             sessionID,
             messageID,
             ordinal: asNumber(data.ordinal),
@@ -631,7 +631,7 @@ export function translateShuvcodeEvent(
       })
       return [
         partUpdated({
-          id: toolPartId({ sessionID, toolID }),
+          id: getShuvcodeToolPartId({ sessionID, toolID }),
           sessionID,
           messageID,
           type: 'tool',
@@ -667,7 +667,7 @@ export function translateShuvcodeEvent(
         .join('\n')
       return [
         partUpdated({
-          id: toolPartId({ sessionID, toolID }),
+          id: getShuvcodeToolPartId({ sessionID, toolID }),
           sessionID,
           messageID: resolvedMessageID,
           type: 'tool',
@@ -702,7 +702,7 @@ export function translateShuvcodeEvent(
         : 'tool failed'
       return [
         partUpdated({
-          id: toolPartId({ sessionID, toolID }),
+          id: getShuvcodeToolPartId({ sessionID, toolID }),
           sessionID,
           messageID: resolvedMessageID,
           type: 'tool',

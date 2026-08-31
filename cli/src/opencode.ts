@@ -382,6 +382,21 @@ let processCleanupHandlersRegistered = false
 let startingServerProcess: ChildProcess | null = null
 const clientCache = new Map<string, OpencodeClient>()
 
+function killServerProcess({
+  serverProcess,
+  signal,
+}: {
+  serverProcess: ChildProcess
+  signal: NodeJS.Signals
+}): void {
+  const pid = serverProcess.pid
+  if (process.platform !== 'win32' && pid) {
+    process.kill(-pid, signal)
+    return
+  }
+  serverProcess.kill(signal)
+}
+
 function notifyServerLifecycle(event: ServerLifecycleEvent): void {
   for (const listener of serverLifecycleListeners) {
     listener(event)
@@ -419,7 +434,7 @@ function killSingleServerProcessNow({
 
   const killResult = errore.try(
     () => {
-      serverProcess.kill('SIGTERM')
+      killServerProcess({ serverProcess, signal: 'SIGTERM' })
     },
     (error) => {
       return new Error('Failed to send SIGTERM to opencode server', {
@@ -457,7 +472,7 @@ function killStartingServerProcessNow({
 
   const killResult = errore.try(
     () => {
-      serverProcess.kill('SIGTERM')
+      killServerProcess({ serverProcess, signal: 'SIGTERM' })
     },
     (error) => {
       return new Error('Failed to send SIGTERM to starting opencode server', {
@@ -476,6 +491,50 @@ function killStartingServerProcessNow({
   opencodeLogger.log(
     `[cleanup:${reason}] Sent SIGTERM to starting opencode server (pid: ${pid})`,
   )
+}
+
+function isServerProcessTreeRunning(child: ChildProcess): boolean {
+  const pid = child.pid
+  if (process.platform !== 'win32' && pid) {
+    return errore.try(
+      () => {
+        process.kill(-pid, 0)
+        return true
+      },
+      () => false,
+    )
+  }
+  return child.exitCode === null && child.signalCode === null
+}
+
+async function waitForServerProcessTreeExit({
+  child,
+  timeoutMs,
+}: {
+  child: ChildProcess
+  timeoutMs: number
+}): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs
+  while (isServerProcessTreeRunning(child)) {
+    if (Date.now() >= deadline) return false
+    await new Promise((resolve) => setTimeout(resolve, 25))
+  }
+  return true
+}
+
+async function waitForChildProcessTermination(child: ChildProcess): Promise<void> {
+  if (await waitForServerProcessTreeExit({ child, timeoutMs: 1000 })) return
+  const killResult = errore.try(
+    () => {
+      killServerProcess({ serverProcess: child, signal: 'SIGKILL' })
+    },
+    (error) => new Error('Failed to send SIGKILL to opencode server', { cause: error }),
+  )
+  if (killResult instanceof Error) {
+    opencodeLogger.warn(killResult.message)
+    return
+  }
+  await waitForServerProcessTreeExit({ child, timeoutMs: 1000 })
 }
 
 function ensureProcessCleanupHandlersRegistered(): void {
@@ -742,19 +801,23 @@ async function waitForServer({
   directory,
   maxAttempts = 300,
   startupStderrTail,
+  shouldStop,
 }: {
   port: number
   directory?: string
   maxAttempts?: number
   startupStderrTail: string[]
+  shouldStop?: () => boolean
 }): Promise<ServerStartError | true> {
   const endpoint = new URL(`http://127.0.0.1:${port}/api/health`)
   if (directory) {
     endpoint.searchParams.set('directory', directory)
   }
   for (let i = 0; i < maxAttempts; i++) {
+    if (shouldStop?.()) return createServerStartupCancelledError(port)
     const response = await requestHealthcheck({ url: endpoint.toString() })
       .catch((e) => new FetchError({ url: endpoint.toString(), cause: e }))
+    if (shouldStop?.()) return createServerStartupCancelledError(port)
     if (response instanceof Error) {
       // Connection refused or other transient errors - continue polling.
       // Use 100ms interval instead of 1s so we detect readiness faster.
@@ -788,6 +851,15 @@ async function waitForServer({
 // In-flight promise to prevent concurrent startups from racing
 let startingServer: Promise<ServerStartError | SingleServer> | null = null
 let preferredStartupDirectory: string | null = null
+let serverLifecycleGeneration = 0
+
+function serverStartupCancelled(generation: number): boolean {
+  return generation !== serverLifecycleGeneration || Boolean(global.shuttingDown)
+}
+
+function createServerStartupCancelledError(port = 0): ServerStartError {
+  return new ServerStartError({ port, reason: 'Server startup cancelled during shutdown' })
+}
 
 function ensureOpencodeHomeDirectories({
   directories,
@@ -859,18 +931,25 @@ async function ensureSingleServer({
 
   // Wrap discovery + spawn in a single shared promise so concurrent callers
   // don't each run discoverExistingServer() and then each spawn a server.
+  const startupGeneration = serverLifecycleGeneration
   startingServer = (async () => {
     // Try to discover an already-running server from the bot process via
     // the hrana server's /kimaki/opencode-port endpoint. This lets CLI
     // subcommands (kimaki session list, archive, wait, etc.) reuse the
     // bot's OpenCode server instead of spawning a redundant one.
     const discovered = await discoverExistingServer()
+    if (serverStartupCancelled(startupGeneration)) {
+      return createServerStartupCancelledError()
+    }
     if (discovered) {
       singleServer = discovered
       return discovered
     }
 
-    return startSingleServer({ directory: startupDirectory })
+    return startSingleServer({
+      directory: startupDirectory,
+      startupGeneration,
+    })
   })()
 
   try {
@@ -882,12 +961,21 @@ async function ensureSingleServer({
 
 async function startSingleServer({
   directory,
+  startupGeneration,
 }: {
   directory?: string
-} = {}): Promise<ServerStartError | SingleServer> {
+  startupGeneration: number
+}): Promise<ServerStartError | SingleServer> {
   ensureProcessCleanupHandlersRegistered()
 
+  if (serverStartupCancelled(startupGeneration)) {
+    return createServerStartupCancelledError()
+  }
+
   const port = await getOpenPort()
+  if (serverStartupCancelled(startupGeneration)) {
+    return createServerStartupCancelledError(port)
+  }
   ensureShuvcodeServerPassword()
 
   const serveArgs = buildShuvcodeServeArgs({ port })
@@ -1085,7 +1173,7 @@ async function startSingleServer({
     spawnArgs,
     {
       stdio: 'pipe',
-      detached: false,
+      detached: process.platform !== 'win32',
       windowsVerbatimArguments,
       // No project-specific cwd — the server handles all directories via
       // x-opencode-directory header. Use home dir as a neutral working dir.
@@ -1122,6 +1210,13 @@ async function startSingleServer({
   )
 
   startingServerProcess = serverProcess
+  if (serverStartupCancelled(startupGeneration)) {
+    killStartingServerProcessNow({ reason: 'startup-cancelled' })
+    if (startingServerProcess === serverProcess) {
+      startingServerProcess = null
+    }
+    return createServerStartupCancelledError(port)
+  }
 
   // Buffer logs until we know if server started successfully.
   const logBuffer: string[] = []
@@ -1179,7 +1274,12 @@ async function startSingleServer({
     // - SIGINT propagated from Ctrl+C (parent process group signal)
     // - any exit during bot shutdown (shuttingDown flag)
     // Only unexpected crashes (non-zero exit without signal) get retried.
-    if (signal === 'SIGTERM' || signal === 'SIGINT' || global.shuttingDown) {
+    if (
+      signal === 'SIGTERM' ||
+      signal === 'SIGINT' ||
+      signal === 'SIGKILL' ||
+      global.shuttingDown
+    ) {
       serverRetryCount = 0
       return
     }
@@ -1213,6 +1313,7 @@ async function startSingleServer({
     port,
     directory,
     startupStderrTail,
+    shouldStop: () => serverStartupCancelled(startupGeneration),
   })
   if (waitResult instanceof Error) {
     killStartingServerProcessNow({ reason: 'startup-failed' })
@@ -1226,6 +1327,13 @@ async function startSingleServer({
       opencodeLogger.error(`  ${line}`)
     }
     return waitResult
+  }
+  if (serverStartupCancelled(startupGeneration)) {
+    killStartingServerProcessNow({ reason: 'startup-cancelled' })
+    if (startingServerProcess === serverProcess) {
+      startingServerProcess = null
+    }
+    return createServerStartupCancelledError(port)
   }
   serverReady = true
   opencodeLogger.log(`Server ready on port ${port}`)
@@ -1638,8 +1746,19 @@ export function extractSdkErrorMessage(error: SdkErrorResponse | null | undefine
  * Used for process teardown, tests, and explicit restarts.
  */
 export async function stopOpencodeServer(): Promise<boolean> {
+  serverLifecycleGeneration += 1
+  const pendingStartup = startingServer
+  const hadStartingServer = startingServer !== null || startingServerProcess !== null
+  const startingProcess = startingServerProcess
+  killStartingServerProcessNow({ reason: 'stop-opencode-server' })
+  startingServerProcess = null
+  if (startingProcess) {
+    await waitForChildProcessTermination(startingProcess)
+  }
+  await pendingStartup?.catch(() => {})
+
   if (!singleServer) {
-    return false
+    return hadStartingServer
   }
 
   const server = singleServer
@@ -1659,7 +1778,7 @@ export async function stopOpencodeServer(): Promise<boolean> {
   if (!server.process.killed) {
     const killResult = errore.try(
       () => {
-        server.process!.kill('SIGTERM')
+        killServerProcess({ serverProcess: server.process!, signal: 'SIGTERM' })
       },
       (error) => {
         return new Error('Failed to send SIGTERM to opencode server', {
@@ -1672,9 +1791,6 @@ export async function stopOpencodeServer(): Promise<boolean> {
     }
   }
 
-  killStartingServerProcessNow({ reason: 'stop-opencode-server' })
-  startingServerProcess = null
-
   singleServer = null
   clientCache.clear()
   serverRetryCount = 0
@@ -1682,9 +1798,7 @@ export async function stopOpencodeServer(): Promise<boolean> {
   // the server restarts. Only abort the current SSE connection so it
   // doesn't hang on a dead server.
   restartGlobalEventListener()
-  await new Promise((resolve) => {
-    setTimeout(resolve, 1000)
-  })
+  await waitForChildProcessTermination(server.process)
   return true
 }
 
@@ -1694,7 +1808,7 @@ export async function stopOpencodeServer(): Promise<boolean> {
  * Used for resolving opencode state issues, refreshing auth, plugins, etc.
  */
 export async function restartOpencodeServer(): Promise<OpenCodeErrors | true> {
-  if (singleServer) {
+  if (singleServer || startingServer) {
     await stopOpencodeServer()
   }
 

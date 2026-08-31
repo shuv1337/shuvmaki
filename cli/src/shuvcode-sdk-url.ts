@@ -11,6 +11,8 @@ import {
 } from './shuvcode-adapter-state.js'
 import {
   createShuvcodeEventTranslator,
+  getShuvcodeTextPartId,
+  getShuvcodeToolPartId,
   rewriteSseBlock,
 } from './shuvcode-event-adapter.js'
 
@@ -798,6 +800,76 @@ function mapShuvcodeMessagePart(part: unknown): unknown {
   }
 }
 
+function getShuvcodePartId({
+  messageID,
+  index,
+}: {
+  messageID: string
+  index: number
+}): string | undefined {
+  if (!messageID) return undefined
+  return `${messageID}:part:${index}`
+}
+
+function normalizePreShapedShuvcodeParts({
+  parts,
+  messageID,
+  sessionID,
+  messageTime,
+}: {
+  parts: unknown[]
+  messageID: string
+  sessionID: string | undefined
+  messageTime: Record<string, unknown>
+}): Record<string, unknown>[] {
+  const seenPartIds = new Set<string>()
+  return parts.flatMap((part, index) => {
+    const mapped = mapShuvcodeMessagePart(part)
+    if (!isRecord(mapped)) return []
+    const rawPartID = typeof mapped.id === 'string' && mapped.id
+      ? mapped.id
+      : undefined
+    const fallbackPartID = getShuvcodePartId({ messageID, index })
+    let partID = rawPartID && !seenPartIds.has(rawPartID)
+      ? rawPartID
+      : fallbackPartID
+    if (!partID) return []
+    let collisionIndex = 1
+    while (seenPartIds.has(partID)) {
+      partID = `${fallbackPartID}:${collisionIndex}`
+      collisionIndex += 1
+    }
+    seenPartIds.add(partID)
+    const normalized: Record<string, unknown> = {
+      ...mapped,
+      id: partID,
+      sessionID,
+      messageID,
+    }
+    if (mapped.type === 'reasoning') {
+      const partTime = isRecord(mapped.time) ? mapped.time : {}
+      const start =
+        typeof partTime.start === 'number'
+          ? partTime.start
+          : typeof partTime.created === 'number'
+            ? partTime.created
+            : typeof messageTime.created === 'number'
+              ? messageTime.created
+              : 0
+      const end =
+        typeof partTime.end === 'number'
+          ? partTime.end
+          : typeof partTime.completed === 'number'
+            ? partTime.completed
+            : typeof messageTime.completed === 'number'
+              ? messageTime.completed
+              : undefined
+      normalized.time = end === undefined ? { start } : { start, end }
+    }
+    return [normalized]
+  })
+}
+
 function mapShuvcodeSessionMessage(
   message: unknown,
   options: {
@@ -817,18 +889,26 @@ function mapShuvcodeSessionMessage(
     }
   }
   if (isRecord(message.info)) {
+    const messageID =
+      typeof message.info.id === 'string' ? message.info.id : ''
+    const sessionID =
+      typeof message.info.sessionID === 'string'
+        ? message.info.sessionID
+        : options.sessionID
     const info: Record<string, unknown> = {
       ...message.info,
-      sessionID:
-        typeof message.info.sessionID === 'string'
-          ? message.info.sessionID
-          : options.sessionID,
+      sessionID,
     }
     if (info.role === 'user' && !isRecord(info.model)) {
       info.model = options.model
     }
     const parts = Array.isArray(message.parts)
-      ? message.parts.map((part) => mapShuvcodeMessagePart(part))
+      ? normalizePreShapedShuvcodeParts({
+          parts: message.parts,
+          messageID,
+          sessionID,
+          messageTime: isRecord(message.info.time) ? message.info.time : {},
+        })
       : []
     return { info, parts }
   }
@@ -849,8 +929,16 @@ function mapShuvcodeSessionMessage(
         time: { created },
         model: options.model,
       },
-      parts: typeof message.text === 'string'
-        ? [{ type: 'text', text: message.text }]
+      parts: typeof message.text === 'string' && id
+        ? [
+            {
+              id: `${id}:part:0`,
+              sessionID: options.sessionID,
+              messageID: id,
+              type: 'text',
+              text: message.text,
+            },
+          ]
         : [],
     }
   }
@@ -871,27 +959,76 @@ function mapShuvcodeSessionMessage(
         tokens: message.tokens,
         cost: message.cost ?? 0,
       },
-      parts: content.flatMap((part): Record<string, unknown>[] => {
-        if (!isRecord(part)) return []
-        if (part.type === 'text' && typeof part.text === 'string') {
-          return [{ type: 'text', text: part.text }]
-        }
-        if (part.type === 'reasoning' && typeof part.text === 'string') {
-          return [{ type: 'reasoning', text: part.text }]
-        }
-        if (part.type === 'tool' && typeof part.id === 'string') {
-          const tool = typeof part.name === 'string' ? part.name : 'tool'
-          return [
-            {
-              type: 'tool',
-              callID: part.id,
-              tool,
-              state: mapShuvcodeToolState({ ...part, tool }),
-            },
-          ]
-        }
-        return []
-      }),
+      parts: (() => {
+        let textOrdinal = 0
+        return content.flatMap((part, index): Record<string, unknown>[] => {
+          if (!isRecord(part)) return []
+          let partID = getShuvcodePartId({ messageID: id, index })
+          if (part.type === 'text' && options.sessionID) {
+            partID = getShuvcodeTextPartId({
+              sessionID: options.sessionID,
+              messageID: id,
+              ordinal: textOrdinal,
+            })
+            textOrdinal += 1
+          } else if (
+            part.type === 'tool' &&
+            typeof part.id === 'string' &&
+            options.sessionID
+          ) {
+            partID = getShuvcodeToolPartId({
+              sessionID: options.sessionID,
+              toolID: part.id,
+            })
+          }
+          if (!partID) return []
+          if (part.type === 'text' && typeof part.text === 'string') {
+            return [
+              {
+                id: partID,
+                sessionID: options.sessionID,
+                messageID: id,
+                type: 'text',
+                text: part.text,
+              },
+            ]
+          }
+          if (part.type === 'reasoning' && typeof part.text === 'string') {
+            const partTime = isRecord(part.time) ? part.time : {}
+            const start =
+              typeof partTime.created === 'number' ? partTime.created : created
+            const end =
+              typeof partTime.completed === 'number'
+                ? partTime.completed
+                : completed
+            return [
+              {
+                id: partID,
+                sessionID: options.sessionID,
+                messageID: id,
+                type: 'reasoning',
+                text: part.text,
+                time: end === undefined ? { start } : { start, end },
+              },
+            ]
+          }
+          if (part.type === 'tool' && typeof part.id === 'string') {
+            const tool = typeof part.name === 'string' ? part.name : 'tool'
+            return [
+              {
+                id: partID,
+                sessionID: options.sessionID,
+                messageID: id,
+                type: 'tool',
+                callID: part.id,
+                tool,
+                state: mapShuvcodeToolState({ ...part, tool }),
+              },
+            ]
+          }
+          return []
+        })
+      })(),
     }
   }
   return {

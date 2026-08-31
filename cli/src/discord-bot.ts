@@ -1616,8 +1616,9 @@ export async function startDiscordBot({
       }
 
       voiceLogger.log('[SHUTDOWN] Stopping OpenCode server')
-      stopExternalOpencodeSessionSync()
+      const externalSyncStop = stopExternalOpencodeSessionSync()
       await stopOpencodeServer()
+      await externalSyncStop
 
       discordLogger.log('Closing database...')
       await closeDatabase()

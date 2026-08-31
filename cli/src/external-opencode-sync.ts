@@ -78,6 +78,12 @@ type DirectorySyncTarget = {
 }
 
 let externalSyncInterval: ReturnType<typeof setInterval> | null = null
+let externalSyncPoll: Promise<void | Error> | null = null
+let externalSyncStopping = false
+
+function hasStablePartId(part: { id?: unknown }): part is { id: string } {
+  return typeof part.id === 'string' && part.id.length > 0
+}
 
 function isSyntheticTextPart(part: Extract<Part, { type: 'text' }>): boolean {
   const candidate = part as Extract<Part, { type: 'text' }> & {
@@ -257,6 +263,19 @@ function sortSessionsByRecency<T extends SessionWithTime>(sessions: T[]): T[] {
   })
 }
 
+function shouldSyncExternalSession({
+  session,
+  startMs,
+}: {
+  session: SessionWithTime & { title?: string | null }
+  startMs: number
+}): boolean {
+  if (getSessionRecencyTimestamp(session) < startMs) return false
+  const title = session.title || ''
+  if (/^new session\s*-/i.test(title)) return false
+  return !/subagent\)\s*$/i.test(title)
+}
+
 function groupTrackedChannelsByDirectory(
   trackedChannels: TrackedTextChannelRow[],
 ): DirectorySyncTarget[] {
@@ -315,9 +334,9 @@ async function ensureExternalSessionThread({
         cause: error,
       })
     })
-    if (!(existingThread instanceof Error) && existingThread?.isThread()) {
-      return existingThread
-    }
+    if (existingThread instanceof Error) return existingThread
+    if (existingThread?.isThread()) return existingThread
+    return new Error(`Mapped channel ${existingThreadId} is not a thread`)
   }
 
   const parentChannel = await discordClient.channels.fetch(channelId).catch((error) => {
@@ -366,14 +385,14 @@ function collectUnsyncedChunks({
   messages: SessionMessage[]
   syncedPartIds: Set<string>
   verbosity: 'tools_and_text' | 'text_and_essential_tools' | 'text_only'
-  thread: ThreadChannel
+  thread: Pick<ThreadChannel, 'id'>
 }): { chunks: SessionChunk[]; directMappings: DirectPartMapping[] } {
   const chunks: SessionChunk[] = []
   const directMappings: DirectPartMapping[] = []
 
   for (const message of messages) {
     if (message.info.role === 'user') {
-      const renderableParts = getRenderableUserTextParts({ message })
+      const renderableParts = getRenderableUserTextParts({ message }).filter(hasStablePartId)
       const unsyncedParts = renderableParts.filter((p) => {
         return !syncedPartIds.has(p.id)
       })
@@ -413,6 +432,7 @@ function collectUnsyncedChunks({
     }
     // Filter assistant parts by verbosity before passing to shared collector
     const filteredParts = message.parts.filter((part) => {
+      if (!hasStablePartId(part)) return false
       return shouldMirrorAssistantPart({ part, verbosity })
     })
     const { chunks: assistantChunks } = collectSessionChunks({
@@ -645,13 +665,9 @@ async function syncDirectoryInner({
   }
   if (signal.aborted) return
 
-  const sessions = (sessionsResponse.data || []).filter((session) => {
-    const title = session.title || ''
-    if (/^new session\s*-/i.test(title)) {
-      return false
-    }
-    return !/subagent\)\s*$/i.test(title)
-  })
+  const sessions = (sessionsResponse.data || []).filter((session) =>
+    shouldSyncExternalSession({ session, startMs }),
+  )
   const sorted = sortSessionsByRecency(sessions)
 
   for (const session of sorted) {
@@ -690,17 +706,36 @@ async function pollExternalSessions({
     return
   }
 
-  for (const target of directoryTargets) {
-    const syncResult = await syncDirectory({
-      target,
-      discordClient,
-    }).catch((error) => {
-      return new Error(`Sync failed for ${target.directory}`, { cause: error })
-    })
-    if (syncResult instanceof Error) {
-      logger.warn(`[EXTERNAL_SYNC] ${syncResult.message}`)
-      void notifyError(syncResult, `External session sync directory failure: ${target.directory}`)
-    }
+  await runDirectorySyncTargets({
+    targets: directoryTargets,
+    shouldStop: () => externalSyncStopping,
+    runTarget: async (target) => {
+      const syncResult = await syncDirectory({
+        target,
+        discordClient,
+      }).catch((error) => {
+        return new Error(`Sync failed for ${target.directory}`, { cause: error })
+      })
+      if (syncResult instanceof Error) {
+        logger.warn(`[EXTERNAL_SYNC] ${syncResult.message}`)
+        void notifyError(syncResult, `External session sync directory failure: ${target.directory}`)
+      }
+    },
+  })
+}
+
+async function runDirectorySyncTargets<T>({
+  targets,
+  shouldStop,
+  runTarget,
+}: {
+  targets: T[]
+  shouldStop: () => boolean
+  runTarget: (target: T) => Promise<void>
+}): Promise<void> {
+  for (const target of targets) {
+    if (shouldStop()) return
+    await runTarget(target)
   }
 }
 
@@ -722,17 +757,15 @@ export function startExternalOpencodeSessionSync({
   if (externalSyncInterval) {
     return
   }
+  externalSyncStopping = false
 
-  let polling = false
   const runPoll = async (): Promise<void> => {
-    if (polling) {
-      return
-    }
-    polling = true
-    const result = await pollExternalSessions({ discordClient }).catch(
+    if (externalSyncPoll) return
+    externalSyncPoll = pollExternalSessions({ discordClient }).catch(
       (e) => new Error('External session poll failed', { cause: e }),
     )
-    polling = false
+    const result = await externalSyncPoll
+    externalSyncPoll = null
     if (result instanceof Error) {
       logger.warn(`[EXTERNAL_SYNC] ${result.message}`)
       void notifyError(result, 'External session poll top-level failure')
@@ -745,12 +778,18 @@ export function startExternalOpencodeSessionSync({
   }, EXTERNAL_SYNC_INTERVAL_MS)
 }
 
-export function stopExternalOpencodeSessionSync(): void {
-  if (!externalSyncInterval) {
-    return
+export async function stopExternalOpencodeSessionSync(): Promise<void> {
+  externalSyncStopping = true
+  if (externalSyncInterval) {
+    clearInterval(externalSyncInterval)
+    externalSyncInterval = null
   }
-  clearInterval(externalSyncInterval)
-  externalSyncInterval = null
+  for (const controller of activeDirectorySyncs.values()) {
+    controller.abort(new Error('External session sync stopped'))
+  }
+  await externalSyncPoll?.catch(() => {})
+  externalSyncPoll = null
+  activeDirectorySyncs.clear()
 }
 
 export const externalOpencodeSyncInternals = {
@@ -761,4 +800,8 @@ export const externalOpencodeSyncInternals = {
   parseDiscordOriginMetadata,
   getDiscordOriginMetadataFromMessage,
   isLatestUserTurnFromDiscord,
+  collectUnsyncedChunks,
+  hasStablePartId,
+  shouldSyncExternalSession,
+  runDirectorySyncTargets,
 }

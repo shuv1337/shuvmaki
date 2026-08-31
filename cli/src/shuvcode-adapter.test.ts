@@ -40,6 +40,84 @@ describe('shuvcode response envelopes', () => {
       }),
     ).toEqual([{ name: 'build', mode: 'primary' }])
   })
+
+  test('assigns stable ids to every mapped session message part', () => {
+    const rawMessages = [
+      {
+        id: 'msg_user',
+        type: 'user',
+        text: 'hello',
+        time: { created: 1 },
+      },
+      {
+        id: 'msg_assistant',
+        type: 'assistant',
+        content: [
+          { type: 'reasoning', text: 'thinking' },
+          { type: 'text', text: 'answer' },
+          {
+            id: 'call_1',
+            type: 'tool',
+            name: 'read',
+            state: { status: 'completed', output: 'done' },
+          },
+        ],
+        time: { created: 2, completed: 3 },
+      },
+    ]
+
+    const first = mapShuvcodeSessionMessages(rawMessages, {
+      sessionID: 'ses_1',
+    }) as Array<{ parts: Array<{ id: string; messageID: string; sessionID: string }> }>
+    const second = mapShuvcodeSessionMessages(rawMessages, {
+      sessionID: 'ses_1',
+    }) as Array<{ parts: Array<{ id: string; messageID: string; sessionID: string }> }>
+
+    expect(first.map((message) => message.parts.map((part) => part.id))).toEqual([
+      ['msg_user:part:0'],
+      [
+        'msg_assistant:part:0',
+        'text-ses_1-msg_assistant-0',
+        'tool-ses_1-call_1',
+      ],
+    ])
+    expect(second).toEqual(first)
+    const parts = first.flatMap((message) => message.parts)
+    expect(
+      parts.every((part) => part.messageID && part.sessionID === 'ses_1'),
+    ).toBe(true)
+  })
+
+  test('repairs missing and duplicate ids in pre-shaped message parts', () => {
+    const mapped = mapShuvcodeSessionMessages(
+      [
+        {
+          info: {
+            id: 'msg_pre_shaped',
+            sessionID: 'ses_1',
+            role: 'assistant',
+            time: { created: 10, completed: 20 },
+          },
+          parts: [
+            { id: 'msg_pre_shaped:part:1', type: 'text', text: 'first' },
+            { type: 'text', text: 'fallback collision' },
+            {
+              type: 'reasoning',
+              text: 'thinking',
+              time: { created: 11, completed: 12 },
+            },
+          ],
+        },
+      ],
+      { sessionID: 'ses_1' },
+    ) as Array<{ parts: Array<{ id: string; time?: unknown }> }>
+
+    expect(mapped[0]?.parts).toMatchObject([
+      { id: 'msg_pre_shaped:part:1' },
+      { id: 'msg_pre_shaped:part:1:1' },
+      { id: 'msg_pre_shaped:part:2', time: { start: 11, end: 12 } },
+    ])
+  })
 })
 
 describe('shuvcode session policy', () => {
@@ -350,7 +428,15 @@ describe('shuvcode response adapters', () => {
           time: { created: 1 },
           model: { providerID: 'anthropic', modelID: 'claude' },
         },
-        parts: [{ type: 'text', text: 'hi' }],
+        parts: [
+          {
+            id: 'msg_u:part:0',
+            sessionID: 'ses_1',
+            messageID: 'msg_u',
+            type: 'text',
+            text: 'hi',
+          },
+        ],
       },
       {
         info: {
@@ -367,8 +453,17 @@ describe('shuvcode response adapters', () => {
           cost: 0,
         },
         parts: [
-          { type: 'text', text: 'ok' },
           {
+            id: 'text-ses_1-msg_a-0',
+            sessionID: 'ses_1',
+            messageID: 'msg_a',
+            type: 'text',
+            text: 'ok',
+          },
+          {
+            id: 'tool-ses_1-call_1',
+            sessionID: 'ses_1',
+            messageID: 'msg_a',
             type: 'tool',
             callID: 'call_1',
             tool: 'bash',
